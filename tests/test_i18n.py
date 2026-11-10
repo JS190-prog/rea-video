@@ -1,3 +1,5 @@
+import re
+
 from rea_video.i18n import LangDict, T, join, set_lang
 from rea_video.classify import LABEL_ZH
 
@@ -26,3 +28,16 @@ def test_unknown_language_rejected():
 
     with pytest.raises(ValueError):
         set_lang("fr")
+
+
+def test_image_labels_follow_language():
+    from rea_video.visual import LABEL_SHORT
+
+    try:
+        set_lang("en")
+        assert LABEL_SHORT["code_render"] == "Code render"
+        assert not any(re.search(r"[㐀-鿿]", v) for v in LABEL_SHORT.values())
+        set_lang("zh")
+        assert LABEL_SHORT["code_render"] == "代码渲染"
+    finally:
+        set_lang("zh")

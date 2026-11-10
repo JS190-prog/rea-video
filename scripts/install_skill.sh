@@ -10,11 +10,24 @@ if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; 
 fi
 
 # ---- Python >= 3.10 ----
+# 依赖 onnxruntime 只给已发布的 Python 版本出预编译包；太新的解释器（如刚发布的 3.15）装不上。
+# 自动选择时优先 3.10–3.14，没有才退回更新的版本。
 py_ok() { "$1" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; }
+py_known() { "$1" -c 'import sys; sys.exit(not ((3, 10) <= sys.version_info[:2] <= (3, 14)))' 2>/dev/null; }
+CANDIDATES="python3 python3.14 python3.13 python3.12 python3.11 python3.10"
 PY="${PYTHON_BIN:-}"
 if [ -z "$PY" ]; then
-  for c in python3 python3.13 python3.12 python3.11 python3.10; do
-    if command -v "$c" >/dev/null 2>&1 && py_ok "$c"; then PY="$c"; break; fi
+  for c in $CANDIDATES; do
+    if command -v "$c" >/dev/null 2>&1 && py_known "$c"; then PY="$c"; break; fi
+  done
+fi
+if [ -z "$PY" ]; then
+  for c in $CANDIDATES; do
+    if command -v "$c" >/dev/null 2>&1 && py_ok "$c"; then
+      PY="$c"
+      echo "⚠ 只找到 $("$c" --version 2>&1)，依赖 onnxruntime 可能还没有这个版本的安装包。装不上的话装一个 3.12，再 PYTHON_BIN=python3.12 bash $0" >&2
+      break
+    fi
   done
 fi
 if [ -z "$PY" ] || ! py_ok "$PY"; then
@@ -22,6 +35,16 @@ if [ -z "$PY" ] || ! py_ok "$PY"; then
   echo "  macOS: brew install python@3.12；Ubuntu: sudo apt install python3.12 python3.12-venv；然后 PYTHON_BIN=python3.12 bash $0" >&2
   exit 1
 fi
+echo "使用 $PY（$("$PY" --version 2>&1)）"
+install_failed() {
+  echo "✗ 安装失败，见上面的输出。" >&2
+  if ! py_known "$PY"; then
+    echo "  $("$PY" --version 2>&1) 太新，onnxruntime 等依赖可能还没有对应的安装包。换一个 3.10–3.14 的解释器：PYTHON_BIN=python3.12 bash $0" >&2
+  else
+    echo "  可以换个解释器重试：PYTHON_BIN=python3.12 bash $0" >&2
+  fi
+  exit 1
+}
 
 # rapidocr 依赖 opencv-python，和 rea-video 的 opencv-python-headless 共用 cv2 目录，后装的覆盖先装的。
 # 只留 headless 一套：删掉 opencv-python 后强制重装 headless（删除会带走共用文件）。
@@ -41,11 +64,11 @@ if "$PY" -m pip install -e "$ROOT[ocr]" 2>&1 | tee "$log"; [ "${PIPESTATUS[0]}" 
 elif grep -qi "externally-managed" "$log"; then
   echo "系统 Python 不允许直接 pip 安装（PEP 668），改用隔离环境。" >&2
   if command -v pipx >/dev/null 2>&1; then
-    pipx install --force --python "$PY" -e "$ROOT[ocr]"
+    pipx install --force --python "$PY" -e "$ROOT[ocr]" || install_failed
     dedupe_cv pipx runpip rea-video
   else
-    "$PY" -m venv "$ROOT/.venv"
-    "$ROOT/.venv/bin/python" -m pip install -e "$ROOT[ocr]"
+    "$PY" -m venv "$ROOT/.venv" || install_failed
+    "$ROOT/.venv/bin/python" -m pip install -e "$ROOT[ocr]" || install_failed
     dedupe_cv "$ROOT/.venv/bin/python" -m pip
     mkdir -p "$HOME/.local/bin"
     ln -sfn "$ROOT/.venv/bin/rea-video" "$HOME/.local/bin/rea-video"
@@ -53,8 +76,7 @@ elif grep -qi "externally-managed" "$log"; then
     case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "⚠ ~/.local/bin 不在 PATH 里，把它加进 shell 配置。" >&2 ;; esac
   fi
 else
-  echo "✗ pip 安装失败，见上面的输出。" >&2
-  exit 1
+  install_failed
 fi
 
 # ---- 链接 skill：只链到已经装了的 agent（都没装就链到 ~/.claude/skills） ----

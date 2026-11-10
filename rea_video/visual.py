@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from .i18n import LangDict, T
 from .util import fmt_time
 
 LABEL_COLOR = {
@@ -16,11 +17,15 @@ LABEL_COLOR = {
     "film_footage": (190, 18, 60),
 }
 # short names for the storyboard strip (the full names are too long for a 200px cell)
-LABEL_SHORT = {
+LABEL_SHORT = LangDict({
     "live_action": "实拍", "ai_video": "AI 视频", "avatar": "数字人", "cg_3d": "3D 渲染", "code_render": "代码渲染",
     "screen_capture": "录屏/截图", "still_motion": "静图推拉", "static_hold": "静帧", "anim_2d": "2D 动画",
     "stop_motion": "定格动画", "film_footage": "影视片段",
-}
+}, en={
+    "live_action": "Live action", "ai_video": "AI video", "avatar": "Avatar", "cg_3d": "3D render", "code_render": "Code render",
+    "screen_capture": "Screen cap", "still_motion": "Pan/zoom", "static_hold": "Still", "anim_2d": "2D anim",
+    "stop_motion": "Stop motion", "film_footage": "Film clip",
+})
 _FONT_CANDIDATES = [
     "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/STHeiti Medium.ttc", "/System/Library/Fonts/STHeiti Light.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
@@ -36,6 +41,15 @@ def _font(size: int):
             except OSError:
                 continue
     return ImageFont.load_default()
+
+
+def _fit_font(d: ImageDraw.ImageDraw, text: str, size: int, max_w: int, min_size: int = 13):
+    """Largest font from `size` down to `min_size` whose rendering of `text` fits in `max_w` pixels."""
+    f = _font(size)
+    while size > min_size and d.textlength(text, font=f) > max_w:
+        size -= 1
+        f = _font(size)
+    return f
 
 
 def _to_pil(bgr: np.ndarray) -> Image.Image:
@@ -69,7 +83,6 @@ def storyboard(items: list[tuple[np.ndarray, str, str, float, float]], out: Path
     """items: (frame, label, title, start, end)."""
     if not items:
         return None
-    font = _font(21)
     small = _font(15)
     cells = []
     for frame, label, title, st, en in items:
@@ -81,7 +94,7 @@ def storyboard(items: list[tuple[np.ndarray, str, str, float, float]], out: Path
         d = ImageDraw.Draw(cell)
         color = LABEL_COLOR.get(label, (80, 80, 80))
         d.rectangle([0, im.height, cell_w, im.height + bar], fill=color)
-        d.text((8, im.height + 4), title, fill=(255, 255, 255), font=font)
+        d.text((8, im.height + 4), title, fill=(255, 255, 255), font=_fit_font(d, title, 21, cell_w - 14))
         d.text((8, im.height + 33), f"{st:.1f}–{en:.1f}s", fill=(255, 255, 255), font=small)
         d.line([(cell_w - 1, 0), (cell_w - 1, im.height + bar)], fill=(255, 255, 255), width=2)  # gap between cells
         cells.append(cell)
@@ -125,7 +138,7 @@ def face_presence(frames: list[np.ndarray]) -> float:
 def audio_timeline(audio: dict, sfx: list[dict], cuts: list[float], duration: float, out: Path, width: int = 1200) -> Path:
     """Lanes: loudness curve, voice, music (+beats), sfx markers, picture cuts."""
     lane_h, top = 26, 24
-    lanes = ["响度", "人声", "音乐", "音效", "切镜"]
+    lanes = [T("响度", "Level"), T("人声", "Voice"), T("音乐", "Music"), T("音效", "SFX"), T("切镜", "Cuts")]
     h = top + lane_h * len(lanes) + 20
     im = Image.new("RGB", (width, h), (250, 250, 249))
     d = ImageDraw.Draw(im)
