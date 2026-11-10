@@ -19,10 +19,12 @@ CANNED = {
 
 class Handler(BaseHTTPRequestHandler):
     seen = []
+    user_agents = []
 
     def do_POST(self):  # noqa: N802
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         Handler.seen.append(body)
+        Handler.user_agents.append(self.headers.get("User-Agent", ""))
         text = body["messages"][0]["content"][-1]["text"]
         payload = CANNED if "label_probs" in text else {"summary": "测试视频", "format": "知识讲解", "segments": []}
         resp = {"choices": [{"message": {"content": "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"}}]}
@@ -50,6 +52,7 @@ def fake_server(monkeypatch):
 
 def test_vlm_fusion_end_to_end(media, tmp_path, fake_server):
     b = decompose(media["code"], tmp_path / "o", use_vlm=True, ocr=False, workers=1, stems=False)
+    assert fake_server.user_agents and all(ua.startswith("rea-video/") for ua in fake_server.user_agents)
     assert b["analysis"]["vlm"]["used"] and not b["analysis"]["vlm"]["errors"]
     s = b["shots"][0]
     assert s["base"]["decided_by"] == "fused" and s["base"]["label"] == "code_render"

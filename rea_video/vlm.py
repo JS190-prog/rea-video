@@ -22,6 +22,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import __version__
 from .classify import LABELS
 from .util import LOG
 
@@ -137,8 +138,10 @@ class VLMClient:
     def _post(self, model: str, content: list[dict], max_tokens: int) -> str:
         body = json.dumps({"model": model, "messages": [{"role": "user", "content": content}],
                            "max_tokens": max_tokens, "temperature": 0.2}).encode()
+        # urllib's default "Python-urllib/x.y" gets a 403 from some gateways, which looks like a bad key
         req = urllib.request.Request(self.cfg.base_url + "/chat/completions", data=body, method="POST",
-                                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.cfg.api_key}"})
+                                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.cfg.api_key}",
+                                              "User-Agent": f"rea-video/{__version__}"})
         with urllib.request.urlopen(req, timeout=self.cfg.timeout) as resp:
             data = json.loads(resp.read().decode())
         try:
