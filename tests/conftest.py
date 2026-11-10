@@ -28,7 +28,7 @@ def _write(frames, path: Path, fps: int = 30) -> Path:
     for f in frames:
         p.stdin.write(f.tobytes())
     p.stdin.close()
-    p.wait()
+    assert p.wait() == 0 and path.stat().st_size > 0, f"ffmpeg failed to write {path}"
     return path
 
 

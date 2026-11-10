@@ -1,9 +1,8 @@
 """Element motion timeline of code-rendered shots, flash cuts, counters and dark text on light grounds."""
-import subprocess
-
 import cv2
 import numpy as np
 
+from conftest import _write
 from rea_video.media import video_info
 from rea_video.motion import event_line, motion_events, palette
 from rea_video.packaging import _NUMERIC, _norm, text_style
@@ -12,23 +11,6 @@ from rea_video.shots import build_track, detect_shots
 
 def _close(a, b, tol=6):
     return all(abs(int(a[i:i + 2], 16) - int(b[i:i + 2], 16)) <= tol for i in (1, 3, 5))
-
-
-def _write(path, frames, fps=30):
-    h, w = frames[0].shape[:2]
-    p = subprocess.Popen(
-        ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
-         "-s", f"{w}x{h}", "-r", str(fps), "-i", "-", "-c:v", "libx264",
-         "-pix_fmt", "yuv420p", "-crf", "16", str(path)],
-        stdin=subprocess.PIPE,
-    )
-    assert p.stdin is not None
-    for f in frames:
-        p.stdin.write(f.tobytes())
-    p.stdin.close()
-    assert p.wait() == 0
-    assert path.is_file() and path.stat().st_size > 0
-    return str(path)
 
 
 def _staggered(n=90):
@@ -47,7 +29,7 @@ def _staggered(n=90):
 
 
 def test_events_time_place_colour(tmp_path):
-    p = _write(tmp_path / "s.mp4", _staggered())
+    p = str(_write(_staggered(), tmp_path / "s.mp4"))
     r = motion_events(p, video_info(p), 0.0, 3.0)
     ev = r["events"]
     cards = [e for e in ev if e["box"][1] < 0.4]
@@ -79,7 +61,7 @@ def test_flash_cut_and_light_shot_not_a_fade(tmp_path):
         f = np.full((360, 200, 3), 255, np.uint8)
         cv2.putText(f, "TITLE", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (40, 40, 40), 2)
         frames.append(f)
-    p = _write(tmp_path / "c.mp4", frames)
+    p = str(_write(frames, tmp_path / "c.mp4"))
     shots = detect_shots(build_track(p, video_info(p)))
     assert [round(s.start, 1) for s in shots] == [0.0, 1.0, 2.0]
     assert shots[1].transition_in == "flash" and 0.1 <= shots[1].flash_s <= 0.4
@@ -109,7 +91,7 @@ def test_element_crops_numbered_like_the_timeline(tmp_path):
 
     from rea_video.motion import element_crops
 
-    p = _write(tmp_path / "s.mp4", _staggered())
+    p = str(_write(_staggered(), tmp_path / "s.mp4"))
     info = video_info(p)
     m = motion_events(p, info, 0.0, 3.0)
     sheet = element_crops(p, info, 0.0, 3.0, m, tmp_path / "shots", "shot_001", 360)
