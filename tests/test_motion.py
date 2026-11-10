@@ -1,4 +1,6 @@
 """Element motion timeline of code-rendered shots, flash cuts, counters and dark text on light grounds."""
+import subprocess
+
 import cv2
 import numpy as np
 
@@ -14,10 +16,18 @@ def _close(a, b, tol=6):
 
 def _write(path, frames, fps=30):
     h, w = frames[0].shape[:2]
-    vw = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    p = subprocess.Popen(
+        ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
+         "-s", f"{w}x{h}", "-r", str(fps), "-i", "-", "-c:v", "libx264",
+         "-pix_fmt", "yuv420p", "-crf", "16", str(path)],
+        stdin=subprocess.PIPE,
+    )
+    assert p.stdin is not None
     for f in frames:
-        vw.write(f)
-    vw.release()
+        p.stdin.write(f.tobytes())
+    p.stdin.close()
+    assert p.wait() == 0
+    assert path.is_file() and path.stat().st_size > 0
     return str(path)
 
 
