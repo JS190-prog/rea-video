@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 
 from .i18n import T
+from .util import write_image
 from .media import VideoInfo, iter_frames
 
 W = 180           # analysis width
@@ -437,7 +438,7 @@ def element_crops(path: str | Path, info: VideoInfo, start: float, end: float, m
                 continue
             name = f"{sid}_{tag}_{k:02d}.jpg"
             crop = fr[y0:y1, x0:x1]
-            cv2.imwrite(str(out_dir / name), crop, [cv2.IMWRITE_JPEG_QUALITY, 94])
+            write_image(out_dir / name, crop, [cv2.IMWRITE_JPEG_QUALITY, 94])
             if tag == "ly":
                 motion["layer"].setdefault("crops", []).append(f"shots/{name}")
             else:
@@ -472,5 +473,5 @@ def element_crops(path: str | Path, info: VideoInfo, start: float, end: float, m
             sheet[ri * (ch + 26): ri * (ch + 26) + ch + 22, x:x + t.shape[1]] = t
             x += t.shape[1] + 4
     name = f"{sid}_elements.jpg"
-    cv2.imwrite(str(out_dir / name), sheet, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    write_image(out_dir / name, sheet, [cv2.IMWRITE_JPEG_QUALITY, 90])
     return f"shots/{name}"

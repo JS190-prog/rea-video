@@ -16,6 +16,20 @@ pip 报 `externally-managed-environment`（Homebrew / 新版 Ubuntu 的系统 Py
 在 Python 3.12 及以下手动装了 `[ocr]` 时，OCR 依赖会再装一套 `opencv-python`，和 rea-video 用的 `opencv-python-headless` 抢同一个 `cv2` 目录。装完跑一次：
 `pip uninstall -y opencv-python && pip install --force-reinstall --no-deps "opencv-python-headless>=4.8,<5"`（`install_skill.sh` 会自动做）。
 
+## 本地语音识别（可选）
+
+没有烧录字幕、也没开能听声音的 VLM 时，台词从哪来？装上可选的语音识别：
+
+```bash
+pip install "rea-video[ocr,asr] @ git+https://github.com/JuneYaooo/rea-video"   # 已装过就 pip install sherpa-onnx
+```
+
+装了之后 `decompose` 会自动在分离出的人声干声上识别（SenseVoice，中 / 英 / 日 / 韩 / 粤；首次使用下载约 160 MB 模型到 `$REA_VIDEO_MODELS`，默认 `~/.cache/rea-video/models`），
+一分钟的片子几秒钟。结果在 `breakdown.json` 的 `speech.lines`（每句有起止时间），报告「脚本」表和 `review_tasks.json` 每镜的 `said` 会用它。`--no-asr` 可跳过。
+
+这是机器听写，会有同音错字、专有名词听错：画面上有字幕时以字幕为准，VLM 给了台词时报告用 VLM 的；引用台词给用户时注明"语音识别，未校对"。
+长句里逐句的时间是按字数估的（`timing: estimated`），整段的起止是测出来的。没装时 `speech.reason` 是 `not_installed`，其余照常。
+
 ## VLM 配置（建议，不强制）
 
 **VLM（建议配置，不强制）**：VLM 是能看图/看视频的多模态大模型（Gemini、GPT-4o、豆包、Qwen-VL 等）。不开 VLM，工具只靠像素统计、帧率、OCR、元数据判断，照样能跑完、出报告，但**实拍 / AI / 3D 的区分明显变弱**，音效清单也只有信号层的低置信候选。开了 VLM，工具会把每个镜头的短片段和关键帧发给它，再和确定性结果融合。

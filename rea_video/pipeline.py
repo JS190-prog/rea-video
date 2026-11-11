@@ -20,7 +20,7 @@ from .plan import Planner
 from .probe import provenance
 from .motion import element_crops, motion_events, palette, strip_frames
 from .shots import build_track, detect_shots
-from .util import LOG, fmt_time, round_floats, write_json
+from .util import LOG, fmt_time, round_floats, write_json, read_image
 from . import aspects
 from .faces import shot_faces
 from .visual import LABEL_SHORT, shot_sheet, storyboard
@@ -61,9 +61,32 @@ def vlm_units(records: list[dict], max_calls: int) -> list[list[dict]]:
     return [units[k] for k in keep]
 
 
+# modules that only run in finalize(): a change there needs no new decode. Everything else measures the video.
+_FINALIZE_ONLY = {"classify.py", "report.py", "plan.py", "production.py", "entities.py", "narrative.py", "review.py", "cli.py",
+                  "evaluate.py", "remake.py", "memory.py", "i18n.py", "visual.py", "sound_source.py", "__init__.py"}
+_DECODE_FP: str | None = None
+
+
+def decode_fingerprint() -> str:
+    """Hash of the code that measures a video (decode, shots, features, audio, packaging). `rea-video eval`
+    reuses a stored breakdown only while this is unchanged, so a change to the measuring code cannot hide behind
+    features cached from the old code."""
+    global _DECODE_FP
+    if _DECODE_FP is None:
+        import hashlib
+
+        root = Path(__file__).parent
+        h = hashlib.sha1()
+        for f in sorted([*root.glob("*.py"), *root.glob("aspects/*.py")]):
+            if f.name not in _FINALIZE_ONLY or f.parent != root:
+                h.update(f.name.encode() + f.read_bytes())
+        _DECODE_FP = h.hexdigest()[:16]
+    return _DECODE_FP
+
+
 def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, whole_vlm: bool = True,
               ocr: bool = True, workers: int = 3, engine: str = "seedance2.0", max_shots_vlm: int = 60,
-              platform_meta: dict | None = None, stems: bool = True, memory: bool = True, packaging: bool = True,
+              platform_meta: dict | None = None, stems: bool = True, memory: bool = True, packaging: bool = True, asr: bool = True,
               lang: str = "zh") -> dict:
     lang = set_lang(lang)
     require_tools()
@@ -258,7 +281,10 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
                 try:
                     low = cut_clip(video, 0, info.duration, out / "clips" / "whole_480p.mp4", width=480, audio=True, crf=30)
                     cuts = ", ".join(f"{r['start']:.2f}" for r in shot_records)
-                    whole = normalize_whole(client.ask_json(WHOLE_PROMPT.format(shots=cuts) + prompt_lang_note(), [(low, "video/mp4")], max_tokens=6000))
+                    whole = normalize_whole(client.ask_json(WHOLE_PROMPT.format(shots=cuts) + prompt_lang_note(), [(low, "video/mp4")],
+                                                             # a long video has more lines, effects and segments to list: a fixed budget cut
+                                                             # the answer off mid-JSON and the whole pass was paid for and lost
+                                                             max_tokens=int(min(16000, max(6000, 2000 + 100 * info.duration)))))
                 except Exception as exc:
                     vlm_info["errors"].append(f"whole: {str(exc)[:160]}")
             asked = [r for u in units for r in u]
@@ -272,6 +298,16 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
                 LOG.warning("VLM: every call failed (%s); result is deterministic only", (vlm_info["errors"] or ["?"])[0])
 
     stem_info: dict = stems_job.result() if stems_job else {}
+    heard: dict = {}
+    if asr and info.has_audio:
+        from . import speech
+
+        if speech.available():  # optional extra; on the vocal stem when there is one, music makes a recognizer invent words
+            on_stem = bool(stem_info.get("ok"))
+            LOG.info("transcribing speech (%s)", "vocal stem" if on_stem else "full mix")
+            heard = dict(speech.transcribe(stem_info["vocals"] if on_stem else video), source="vocals_stem" if on_stem else "mix")
+        else:
+            heard = {"ok": False, "reason": "not_installed"}
     breakdown = {
         "schema": SCHEMA, "tool": {"name": "rea-video", "version": __version__}, "lang": lang,
         "source": {"path": str(video), "filename": video.name, "sha256_head": _sha256_head(video), "width": info.width,
@@ -279,10 +315,11 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
                    "aspect_ratio": info.aspect_ratio, "has_audio": info.has_audio, "rotation": info.rotation},
         "provenance": {k: v for k, v in prov.items() if k != "tags"}, "summary": {},
         "audio": round_floats(audio), "global_layers": round_floats(template), "whole_video_vlm": whole,
-        "shots": shot_records, "analysis": {"vlm": vlm_info, "ocr": ocr, "seconds": round(time.time() - t0, 1)},
+        "shots": shot_records, "analysis": {"vlm": vlm_info, "ocr": ocr, "seconds": round(time.time() - t0, 1), "decode_fp": decode_fingerprint()},
         "assets": {"storyboard": "storyboard.jpg"},
         "platform_meta": platform_meta or {},
         "stems": {k: (Path(v).name if k in ("original", "vocals", "music") else v) for k, v in stem_info.items()},
+        "speech": heard,
         "per_clip_audio": per_clip_audio(str(video), [s.start for s in shots[1:]], info.duration) if info.has_audio else {},
     }
     if pack is not None:
@@ -706,7 +743,7 @@ def finalize(breakdown: dict, out: Path, engine: str | None = None) -> dict:
     import cv2
 
     for r in shot_records:
-        img = cv2.imread(str(out / r["assets"]["first_frame"]))
+        img = read_image(out / r["assets"]["first_frame"])
         if img is not None:
             sb_items.append((img, r["base"]["label"], f"#{r['index']} {LABEL_SHORT.get(r['base']['label'], r['base']['label'])} {r['base']['confidence']:.0%}",
                              r["start"], r["end"]))
@@ -718,7 +755,7 @@ def finalize(breakdown: dict, out: Path, engine: str | None = None) -> dict:
     for rec in shot_records:  # breakdowns made before the grade aspect existed: measure it from the saved frames
         asp = rec.setdefault("aspects", {})
         if rec["base"]["label"] in PHOTOGRAPHIC and not (asp.get("grade") or {}).get("measured"):
-            frames = [cv2.imread(str(out / rec["assets"][k])) for k in ("first_frame", "last_frame") if rec.get("assets", {}).get(k)]
+            frames = [read_image(out / rec["assets"][k]) for k in ("first_frame", "last_frame") if rec.get("assets", {}).get(k)]
             m = measure_frames([f for f in frames if f is not None])
             if m:
                 asp["grade"] = {"measured": m}

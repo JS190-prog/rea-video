@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 from .classify import LABELS
-from .pipeline import PACKAGING_VERSION, decompose, finalize
+from .pipeline import PACKAGING_VERSION, decode_fingerprint, decompose, finalize
 from .util import LOG, read_json, round_floats, write_json
 
 
@@ -173,7 +173,8 @@ def boundary_f1(pred: list[float], gt: list[float], tol: float = 0.1, ignore: li
     used = set()
     tp = fp = 0
     for p in pred:
-        hit = next((i for i, g in enumerate(gt) if i not in used and abs(p - g) <= tol), None)
+        near = [i for i, g in enumerate(gt) if i not in used and abs(p - g) <= tol]
+        hit = min(near, key=lambda i: abs(p - gt[i])) if near else None  # the closest true cut, not the first in range
         if hit is not None:
             used.add(hit)
             tp += 1
@@ -193,15 +194,24 @@ def evaluate(labels_path: Path, out: Path, use_vlm: bool = False, ocr: bool = Tr
     real_tot = real_ok = 0.0
     audio_hits: dict[str, list[bool]] = {}
     aspect_hits: dict[str, list[bool]] = {}
+    missing: list[str] = []
     for entry in spec["videos"]:
         path = _expand(entry["path"])
+        if not Path(path).is_file():  # the listed location is gone: a copy kept under eval/media/<id>.<ext> stands in
+            kept = Path(__file__).resolve().parents[1] / "eval" / "media" / f"{entry['id']}{Path(path).suffix}"
+            path = str(kept) if kept.is_file() else path
         if not Path(path).is_file():
             LOG.warning("skip %s: missing %s", entry["id"], path)
+            missing.append(entry["id"])
             continue
         vout = out / entry["id"]
         bfile = vout / "breakdown.json"
-        if (not only or entry["id"] not in only) and reuse and bfile.is_file() and (not use_vlm or read_json(bfile)["analysis"]["vlm"].get("used")):
-            b = read_json(bfile)
+        stored = read_json(bfile) if reuse and bfile.is_file() and (not only or entry["id"] not in only) else None
+        if stored and stored.get("analysis", {}).get("decode_fp") != decode_fingerprint():
+            LOG.info("%s: the measuring code changed since this breakdown was stored, decoding again", entry["id"])
+            stored = None
+        if stored and (not use_vlm or stored["analysis"]["vlm"].get("used")):
+            b = stored
             from .media import video_info
             from .probe import provenance
 
@@ -243,7 +253,7 @@ def evaluate(labels_path: Path, out: Path, use_vlm: bool = False, ocr: bool = Tr
                 b["packaging"] = round_floats(pk)
             b = finalize(b, vout)  # re-classify with the current rules
         else:
-            b = decompose(path, vout, use_vlm=use_vlm, ocr=ocr, whole_vlm=False, stems=stems and bool(entry.get("audio")), memory=False)
+            b = decompose(path, vout, use_vlm=use_vlm, ocr=ocr, whole_vlm=False, stems=stems and bool(entry.get("audio")), memory=False, asr=False)
         v_tot = v_ok = 0.0
         m_tot = m_ok = 0.0
         shots = []
@@ -295,7 +305,8 @@ def evaluate(labels_path: Path, out: Path, use_vlm: bool = False, ocr: bool = Tr
         tot_dur += v_tot
         ok_dur += v_ok
         LOG.info("%-28s acc=%s  %s", entry["id"], row["accuracy"], b["summary"]["verdict"][:80])
-    summary = {"videos": len(rows), "duration_weighted_accuracy": round(ok_dur / tot_dur, 3) if tot_dur else None,
+    # a score over part of the set is not the set's score: say how much of it was there
+    summary = {"videos": len(rows), "videos_listed": len(spec["videos"]), **({"missing": missing} if missing else {}), "duration_weighted_accuracy": round(ok_dur / tot_dur, 3) if tot_dur else None,
                "video_accuracy_mean": round(sum(r["accuracy"] for r in rows if r["accuracy"] is not None) / max(1, sum(r["accuracy"] is not None for r in rows)), 3),
                "per_video": {r["id"]: r["accuracy"] for r in rows if r["accuracy"] is not None}, "vlm": use_vlm}
     if real_tot:

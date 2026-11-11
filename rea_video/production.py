@@ -16,6 +16,7 @@ from pathlib import Path
 
 import cv2
 
+from .util import read_image
 from .classify import LABEL_ZH
 from .aspects.camera import SUPPORT_ZH
 from .plan import CODE_STYLES, Planner, code_scene, shot_prompts
@@ -36,7 +37,7 @@ def _norm(s: str) -> str:
 
 # ---------------------------------------------------------------- scene similarity
 def _hist(path: Path):
-    im = cv2.imread(str(path))
+    im = read_image(path)
     if im is None:
         return None
     h = cv2.calcHist([cv2.cvtColor(im, cv2.COLOR_BGR2HSV)], [0, 1, 2], None, [18, 4, 4], [0, 180, 0, 256, 0, 256])
@@ -67,7 +68,7 @@ def lit_colours(paths: list[Path], top: int = 3, min_share: float = 0.15) -> lis
     votes: dict[tuple, float] = {}
     n = 0
     for p in paths:
-        im = cv2.imread(str(p))
+        im = read_image(p)
         if im is None:
             continue
         hsv = cv2.cvtColor(im, cv2.COLOR_BGR2HSV).reshape(-1, 3)

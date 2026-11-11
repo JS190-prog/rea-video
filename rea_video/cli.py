@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from .util import LOG, OCR_LANGS, load_env_files, read_json, setup_logging
+from .util import LOG, OCR_LANGS, load_env_files, read_json, setup_logging, read_image
 from .i18n import LANGS, T, set_lang
 from .classify import LABELS
 from .vlm import vlm_note
@@ -61,7 +61,7 @@ def cmd_decompose(args) -> int:
         raise SystemExit(f"错误：不支持的报告语言 {lang}（可选：{', '.join(LANGS)}）")
     b = decompose(args.video, out, use_vlm=use_vlm, whole_vlm=not args.no_whole, ocr=not args.no_ocr,
                   workers=args.workers, engine=args.engine or pref("engine", "seedance2.0"), platform_meta=meta, stems=stems,
-                  packaging=not args.no_packaging, lang=lang, max_shots_vlm=max(1, args.max_vlm_shots))
+                  packaging=not args.no_packaging, lang=lang, asr=not args.no_asr, max_shots_vlm=max(1, args.max_vlm_shots))
     print(json.dumps({"out": str(out), "verdict": b["summary"]["verdict"], "shots": b["summary"]["shots"],
                       "confidence": b["summary"]["confidence"], "vlm": b["summary"]["vlm"],
                       "report": str(out / "report.html")}, ensure_ascii=False, indent=2))
@@ -149,6 +149,10 @@ def cmd_eval(args) -> int:
     res = evaluate(Path(args.labels), Path(args.out), use_vlm=args.vlm, ocr=not args.no_ocr, reuse=not args.fresh,
                    only=set(args.only.split(",")) if args.only else None, stems=args.stems)
     print(json.dumps(res["summary"], ensure_ascii=False, indent=2))
+    gone = res["summary"].get("missing")
+    if gone:
+        print("rea-video: " + T("只评了 {n}/{m} 个样本，其余找不到文件：{ids}", "scored {n} of {m} videos, files missing for: {ids}",
+                                  n=res["summary"]["videos"], m=res["summary"]["videos_listed"], ids=", ".join(gone)), file=sys.stderr)
     return 0
 
 
@@ -242,7 +246,7 @@ def cmd_tiles(args) -> int:
     with tempfile.TemporaryDirectory() as tmpd:
         for i, t in enumerate(times):
             p = extract_frame(args.video, float(t), Path(tmpd) / f"tile_{i:03d}.jpg", width=args.cell)
-            img = cv2.imread(str(p))
+            img = read_image(p)
             if img is not None:
                 frames.append(img)
     rows = [frames[i:i + args.cols] for i in range(0, len(frames), args.cols)]
@@ -434,6 +438,7 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--max-vlm-shots", type=int, default=60, help="最多发给 VLM 的调用数（默认 60；镜头更多时优先看最拿不准的，其余只靠确定性取证）")
     d.add_argument("--engine", help="复刻计划使用的 capsule-cinema 视频引擎（默认 prefs 里的 engine，否则 seedance2.0）")
     d.add_argument("--meta", help='平台元数据 JSON，例如 {"music": {"title": "xx", "author": "yy", "is_original": false, "popular": true}}')
+    d.add_argument("--no-asr", action="store_true", help="不做本地语音识别（装了 rea-video[asr] 才会做：在人声干声上识别台词和时间，首次使用下载约 160 MB 模型）")
     d.add_argument("--no-stems", action="store_true", help="不做人声/配乐分离（默认会输出 stems/original.wav、vocals.wav、music.wav）")
     d.set_defaults(func=cmd_decompose)
 

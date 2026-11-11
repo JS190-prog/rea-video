@@ -6,6 +6,10 @@ Config (first non-empty wins):
   GEMINI3_BASE_URL / GEMINI3_API_KEY / GEMINI3_MODEL_NAME                        (capsule-cinema)
 REA_VLM_MODEL may be a comma-separated fallback list.
 REA_VLM_MEDIA = both | video | frames  (default both: a short clip as data:video/mp4 plus keyframes)
+REA_VLM_VIDEO_PART = image_url | video_url  (how a clip is attached; unset: image_url, switching to video_url by
+                     itself when the endpoint refuses the first form, as DashScope does)
+REA_VLM_REASONING_EFFORT = low | medium | high  (passed through when set; thinking models answer these prompts
+                     several times faster and cheaper on low)
 """
 from __future__ import annotations
 
@@ -35,6 +39,8 @@ class VLMConfig:
     models: list[str]
     timeout: float = 180.0
     media: str = "both"
+    video_part: str = ""  # "" = find out: image_url first, video_url if that is refused
+    reasoning_effort: str = ""
 
     @classmethod
     def from_env(cls) -> "VLMConfig | None":
@@ -49,7 +55,9 @@ class VLMConfig:
             if cfg is None:
                 cfg = cls(base_url=base, api_key=key, models=models,
                           timeout=float(os.getenv("REA_VLM_TIMEOUT", os.getenv("VIDEO_ANALYSIS_TIMEOUT_SECONDS", "180"))),
-                          media=os.getenv("REA_VLM_MEDIA", "both"))
+                          media=os.getenv("REA_VLM_MEDIA", "both"),
+                          video_part=os.getenv("REA_VLM_VIDEO_PART", "").strip().lower(),
+                          reasoning_effort=os.getenv("REA_VLM_REASONING_EFFORT", "").strip().lower())
             elif prefix != "REA_VLM" and base == cfg.base_url and key == cfg.api_key:
                 cfg.models += [m for m in models if m not in cfg.models]
         return cfg
@@ -130,6 +138,8 @@ class VLMClient:
         self.cache_dir = cache_dir
         self.dead_requests = 0
         self.models = list(cfg.models)  # reordered: the last model that answered goes first
+        self.video_part = cfg.video_part if cfg.video_part in ("image_url", "video_url") else "image_url"
+        self._part_settled = cfg.video_part in ("image_url", "video_url")  # set by the user, or learned from an answer / a second refusal
         self._lock = threading.Lock()
         host = re.sub(r"^https?://", "", cfg.base_url).split("/")[0].rsplit("@", 1)[-1].split(":")[0]
         if cfg.base_url.lower().startswith("http://") and host not in ("localhost", "127.0.0.1", "::1", "[::1]"):
@@ -143,7 +153,8 @@ class VLMClient:
 
     def _post(self, model: str, content: list[dict], max_tokens: int) -> str:
         body = json.dumps({"model": model, "messages": [{"role": "user", "content": content}],
-                           "max_tokens": max_tokens, "temperature": 0.2}).encode()
+                           "max_tokens": max_tokens, "temperature": 0.2,
+                           **({"reasoning_effort": self.cfg.reasoning_effort} if self.cfg.reasoning_effort else {})}).encode()
         # urllib's default "Python-urllib/x.y" gets a 403 from some gateways, which looks like a bad key
         req = urllib.request.Request(self.cfg.base_url + "/chat/completions", data=body, method="POST",
                                      headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.cfg.api_key}",
@@ -164,7 +175,8 @@ class VLMClient:
         # Use the configured order, not self.models: successful fallbacks reorder
         # the latter during a run. Never include the API key in the cache identity.
         request = {"prompt": prompt, "base_url": self.cfg.base_url.rstrip("/"),
-                   "models": self.cfg.models, "max_tokens": max_tokens}
+                   "models": self.cfg.models, "max_tokens": max_tokens,
+                   **({"reasoning_effort": self.cfg.reasoning_effort} if self.cfg.reasoning_effort else {})}
         h = hashlib.sha1(json.dumps(request, sort_keys=True, ensure_ascii=False).encode())
         for p, mime in media:
             h.update(mime.encode())
@@ -180,8 +192,16 @@ class VLMClient:
                 pass  # a half-written file from an interrupted run: ask again
         if self.gave_up:
             raise RuntimeError("VLM skipped: service failed on every model for earlier requests")
-        content = [{"type": "image_url", "image_url": {"url": _data_uri(p, mime)}} for p, mime in media]
-        content.append({"type": "text", "text": prompt})
+        has_video = any(mime.startswith("video/") for _, mime in media)
+        part = self.video_part
+        swapped = False
+
+        def build(video_part: str) -> list[dict]:
+            parts = [{"type": video_part, video_part: {"url": _data_uri(p, mime)}} if mime.startswith("video/")
+                     else {"type": "image_url", "image_url": {"url": _data_uri(p, mime)}} for p, mime in media]
+            return parts + [{"type": "text", "text": prompt}]
+
+        content = build(part)
         last: Exception | None = None
         refused = False
         for model in list(self.models):
@@ -198,6 +218,8 @@ class VLMClient:
                         tmp.replace(cached)
                     with self._lock:  # shots run in a thread pool
                         self.dead_requests = 0
+                        if has_video:
+                            self.video_part, self._part_settled = part, True
                         if model in self.models and self.models[0] != model:
                             self.models.remove(model)
                             self.models.insert(0, model)
@@ -210,6 +232,14 @@ class VLMClient:
                     last = RuntimeError(f"HTTP {exc.code} {exc.reason}: {why}" if why else f"HTTP {exc.code} {exc.reason}")
                     LOG.warning("VLM %s attempt %d failed: %s", model, attempt + 1, str(last)[:200])
                     if exc.code in self.REQUEST_ERRORS:
+                        if has_video and not self._part_settled and not swapped:
+                            # some endpoints take a clip only as a video_url part: try that form once
+                            part, swapped = "video_url", True
+                            content = build(part)
+                            continue
+                        if swapped:  # refused both ways: this endpoint does not take clips, stop trying the other form
+                            with self._lock:
+                                self._part_settled = True
                         # this request is what the endpoint refuses (too large, video not accepted): the same
                         # bytes will not pass a second time, and other shots are not affected
                         refused = True

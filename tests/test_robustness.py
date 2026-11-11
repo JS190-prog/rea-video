@@ -248,3 +248,77 @@ def test_vlm_note_says_when_shots_were_left_out():
     set_lang("zh")
     assert "60/200" in vlm_note({"status": "ok", "model": "m", "asked_shots": 60, "total_shots": 200})
     assert "/" not in vlm_note({"status": "ok", "model": "m", "asked_shots": 5, "total_shots": 5})
+
+
+def test_whole_aspect_answered_as_a_sentence_does_not_break_the_report():
+    from rea_video.aspects.base import seen, video_seen
+
+    b = {"whole_video_vlm": {"aspects": {"format": "单人口播"}}, "review_aspects": "n/a"}
+    assert video_seen(b, "format", "format") == {}
+    assert seen({"vlm": {"aspects": {"camera": "手持"}}, "review": {"aspects": ["x"]}}, "camera", "angle") == {}
+    assert video_seen({"whole_video_vlm": {"aspects": {"format": {"format": "口播"}}}}, "format", "format") == {"vlm": "口播"}
+
+
+def test_images_read_and_write_under_a_non_ascii_path(tmp_path):
+    import numpy as np
+
+    from rea_video.util import read_image, write_image
+
+    p = tmp_path / "对标视频" / "首帧.jpg"
+    p.parent.mkdir()
+    assert write_image(p, np.full((8, 8, 3), 200, np.uint8)) and read_image(p).shape == (8, 8, 3)
+    assert read_image(tmp_path / "missing.jpg") is None
+
+
+def test_clip_is_resent_as_video_url_when_the_first_form_is_refused(monkeypatch, tmp_path):
+    import io
+    import json
+
+    clip = tmp_path / "c.mp4"
+    clip.write_bytes(b"not really a video")
+    c = VLMClient(VLMConfig("https://example.invalid/v1", "k", ["m1"]))
+    kinds = []
+
+    class R(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout):
+        body = json.loads(req.data)
+        kind = body["messages"][0]["content"][0]["type"]
+        kinds.append(kind)
+        assert "reasoning_effort" not in body
+        if kind == "image_url":
+            raise _http_error(400, b"The image format is illegal")
+        return R(json.dumps({"choices": [{"message": {"content": '{"ok": 1}'}}]}).encode())
+
+    monkeypatch.setattr("rea_video.vlm.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("rea_video.vlm.time.sleep", lambda s: None)
+    assert c.ask_json("p", [(clip, "video/mp4")])["ok"] == 1
+    assert c.ask_json("p2", [(clip, "video/mp4")])["ok"] == 1
+    assert kinds == ["image_url", "video_url", "video_url"]  # learned once, not rediscovered per shot
+
+
+def test_reasoning_effort_is_passed_through_when_set(monkeypatch):
+    import io
+    import json
+
+    seen = []
+
+    class R(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout):
+        seen.append(json.loads(req.data).get("reasoning_effort"))
+        return R(json.dumps({"choices": [{"message": {"content": '{"ok": 1}'}}]}).encode())
+
+    monkeypatch.setattr("rea_video.vlm.urllib.request.urlopen", fake_urlopen)
+    VLMClient(VLMConfig("https://example.invalid/v1", "k", ["m1"], reasoning_effort="low")).ask_json("p", [])
+    assert seen == ["low"]

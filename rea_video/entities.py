@@ -100,6 +100,11 @@ def script(b: dict) -> list[dict]:
             rows.append({"start": ln.get("start"), "end": ln.get("end"), "speaker": _s(ln, "speaker", 20), "text": _s(ln, "text", 200)})
     if rows:
         return rows
+    for ln in ((b.get("speech") or {}).get("lines") or []):  # machine transcript: below the VLM's, above segment copy
+        if isinstance(ln, dict) and _s(ln, "text"):
+            rows.append({"start": ln.get("start"), "end": ln.get("end"), "speaker": "", "text": _s(ln, "text", 200), "source": "asr"})
+    if rows:
+        return rows
     for seg in w.get("segments") or []:
         if isinstance(seg, dict) and _s(seg, "copy"):
             rows.append({"start": seg.get("start"), "end": seg.get("end"), "speaker": "", "text": _s(seg, "copy", 200)})

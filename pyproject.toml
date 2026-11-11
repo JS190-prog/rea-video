@@ -25,6 +25,8 @@ ocr = [
   "rapidocr-onnxruntime>=1.3,<2; python_version < '3.13'",
   "rapidocr>=3.4,<4; python_version >= '3.13'",
 ]
+# 本地语音识别（SenseVoice，中英日韩粤）：没有字幕、没开 VLM 时也能拿到带时间的台词；首次使用下载约 160 MB 模型
+asr = ["sherpa-onnx>=1.12"]
 dev = ["pytest>=7", "jsonschema>=4"]
 
 [project.scripts]

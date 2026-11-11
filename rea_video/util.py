@@ -68,6 +68,29 @@ def _json_default(value: Any) -> Any:
     return str(value)
 
 
+def read_image(path):
+    """cv2.imread that also opens paths with non-ASCII characters on Windows (imread goes through the ANSI
+    file API there and returns None for a Chinese folder name). None when the file is missing or unreadable."""
+    import cv2
+    import numpy as np
+
+    try:
+        data = np.fromfile(str(path), dtype=np.uint8)
+    except OSError:
+        return None
+    return cv2.imdecode(data, cv2.IMREAD_COLOR) if data.size else None
+
+
+def write_image(path, img, params: list[int] | None = None) -> bool:
+    """cv2.imwrite counterpart of read_image; the format follows the file extension."""
+    import cv2
+
+    ok, buf = cv2.imencode(Path(path).suffix or ".jpg", img, params or [])
+    if ok:
+        buf.tofile(str(path))
+    return bool(ok)
+
+
 def fetch(url: str, dest: Path, timeout: float = 60.0) -> None:
     """Download url to dest. The timeout is per read, so a stalled connection raises instead of hanging the run."""
     import shutil

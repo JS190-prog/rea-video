@@ -16,7 +16,7 @@ from pathlib import Path
 
 import cv2
 
-from .util import LOG, read_json
+from .util import LOG, read_json, read_image
 
 
 def _ff(args: list[str], cwd: Path | None = None) -> None:
@@ -28,7 +28,7 @@ def render_still_motion(image: Path, out: Path, duration: float, size: tuple[int
                         analysis_width: int = 480) -> Path:
     """Re-create a Ken Burns move: per-frame similarity transform about the frame centre,
     with the zoom rate and pan speed measured during decomposition."""
-    img = cv2.imread(str(image))
+    img = read_image(image)
     if img is None:
         raise FileNotFoundError(image)
     w, h = size

@@ -32,7 +32,7 @@ import numpy as np
 
 from .media import VideoInfo, extract_frame, iter_frames
 from .overlay import get_ocr
-from .util import LOG
+from .util import LOG, read_image, write_image
 
 OCR_FPS = 2.0
 OCR_MAX = 240            # OCR calls per video (~0.2 s each)
@@ -1452,13 +1452,13 @@ def analyze(path: str | Path, info: VideoInfo, cuts: list[float], out_dir: Path 
         for s in stickers:
             try:
                 p = extract_frame(path, (s["t0"] + s["t1"]) / 2, d / f"{s['id']}_frame.jpg", width=720)
-                img = cv2.imread(str(p))
+                img = read_image(p)
                 if img is not None:
                     H, W = img.shape[:2]
                     x, y, w, h = s["bbox"]
                     crop = img[int(y * H):int((y + h) * H), int(x * W):int((x + w) * W)]
                     if crop.size:
-                        cv2.imwrite(str(d / f"{s['id']}.jpg"), crop)
+                        write_image(d / f"{s['id']}.jpg", crop)
                         s["image"] = f"packaging/{s['id']}.jpg"
                 p.unlink(missing_ok=True)
             except Exception as exc:  # pragma: no cover

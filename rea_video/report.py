@@ -205,6 +205,8 @@ def _content_md(b: dict) -> list[str]:
         head = T("**脚本**", "**Script**")
         if n.get("type") and n.get("type") != "none":
             head += T("（{t}{v}）", " ({t}{v})", t=NARR_ZH.get(n["type"], n["type"]), v=(T("，", ", ") + n["voice"]) if n.get("voice") else "")
+        if lines[0].get("source") == "asr":
+            head += T("（本地语音识别，未校对；同音字和专有名词以画面字幕为准）", " (local speech recognition, unchecked; trust on-screen subtitles for names and homophones)")
         L += ["", head]
         L += _table([T("时间", "Time"), T("谁", "Who"), T("台词 / 旁白", "Line")],
                     [[_span(ln["start"], ln["end"]), ln["speaker"] or T("旁白", "narration"), ln["text"]] for ln in lines], fold_title=T("全部 {n} 句", "all {n} lines", n=len(lines)))

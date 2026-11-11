@@ -59,7 +59,7 @@ video_prompt（复刻该镜头的<PROMPT_LANG>视频提示词：先写景别、�
 最后在答案顶层的 aspects 里写整片：机位/场景、推测设备、整体布光、剪辑手法、视频形式。
 
 每个镜头再填 narrative（这个镜头在讲什么）：role 选它在叙事上的作用，point 用一句话写它讲的那一点（去掉具体的人和产品也成立的写法，
-例如"用反常识的数字开场"而不是"说水豚每天睡 12 小时"）。先通读 storyboard.jpg 和每镜的 said（这一镜里的字幕）再填，作用是相对整片说的：
+例如"用反常识的数字开场"而不是"说水豚每天睡 12 小时"）。先通读 storyboard.jpg 和每镜的 said（这一镜里的字幕；没有字幕时是语音识别听到的话，可能有同音错字）再填，作用是相对整片说的：
 {ROLE_GUIDE}
 报告会把它连成「叙事线」：复刻时保留这条线，把案例和素材换成自己的。
 
@@ -122,6 +122,9 @@ def build_tasks(breakdown: dict, out_dir: str) -> tuple[dict, dict]:
     subs = [c for c in (breakdown.get("packaging") or {}).get("text_cues", []) if c.get("kind") == "subtitle" and c.get("text")]
     for rec in breakdown["shots"]:
         said[rec["index"]] = " ".join(c["text"] for c in subs if rec["start"] <= (c["t0"] + c["t1"]) / 2 < rec["end"])[:160]
+        if not said[rec["index"]]:  # no burned-in subtitles here: what the recognizer heard, when it ran
+            said[rec["index"]] = " ".join(ln["text"] for ln in (breakdown.get("speech") or {}).get("lines") or []
+                                          if rec["start"] <= (ln["start"] + ln["end"]) / 2 < rec["end"])[:160]
     for rec in breakdown["shots"]:
         # only the deterministic layer is shown: the agent should judge independently of any VLM answer
         ranked = sorted(rec["deterministic"]["probs"].items(), key=lambda kv: -kv[1])

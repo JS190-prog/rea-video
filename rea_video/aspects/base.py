@@ -103,12 +103,19 @@ def get(key: str) -> Aspect | None:
 
 # ---------------------------------------------------------------- what the image readers said ----
 
+def _fields_of(answers, aspect: str) -> dict:
+    """One aspect's answers. A model sometimes answers a whole aspect with a bare sentence instead of its
+    fields; that reads as "no answer" here, since a stored answer is read again on every later run."""
+    got = answers.get(aspect) if isinstance(answers, dict) else None
+    return got if isinstance(got, dict) else {}
+
+
 def seen(shot: dict, aspect: str, field_key: str) -> dict[str, str]:
     """{"agent": ..., "vlm": ...} for one field of one shot. Also reads the older flat `cinematography` answers."""
     out = {}
     for src, rk in (("agent", "review"), ("vlm", "vlm")):
         r = shot.get(rk) or {}
-        v = ((r.get("aspects") or {}).get(aspect) or {}).get(field_key) or (r.get("cinematography") or {}).get(field_key)
+        v = _fields_of(r.get("aspects"), aspect).get(field_key) or _fields_of(r, "cinematography").get(field_key)
         if v and str(v).strip().lower() not in ("不适用", "unknown", "无法判断", "n/a", "not applicable"):
             out[src] = str(v).strip()
     return out
@@ -116,10 +123,10 @@ def seen(shot: dict, aspect: str, field_key: str) -> dict[str, str]:
 
 def video_seen(b: dict, aspect: str, field_key: str) -> dict[str, str]:
     out = {}
-    rv = ((b.get("review_aspects") or {}).get(aspect) or {}).get(field_key)
+    rv = _fields_of(b.get("review_aspects"), aspect).get(field_key)
     if rv:
         out["agent"] = str(rv)
-    wv = ((((b.get("whole_video_vlm") or {}).get("aspects") or {}).get(aspect) or {}).get(field_key))
+    wv = _fields_of(_fields_of(b, "whole_video_vlm").get("aspects"), aspect).get(field_key)
     if wv:
         out["vlm"] = str(wv)
     return out
