@@ -15,7 +15,7 @@ the VLM's listening judgement. Every verdict carries probabilities, evidence and
 way to confirm it."""
 from __future__ import annotations
 
-from .i18n import LangDict, T, join, semi
+from .i18n import LangDict, T, semi
 
 import numpy as np
 

@@ -1,5 +1,7 @@
 # 扩充评测集
 
+先装开发依赖：`pip install -e ".[ocr,dev]"`。
+
 1. 在 `eval/labels.yaml`（或新建一个 yaml）里加条目：
    - `label`：可以是列表，表示可接受的多个标签
    - `segments`：分段真值

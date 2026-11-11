@@ -85,6 +85,40 @@ def test_held_chord_is_still_music(tmp_path):
     assert r["music"]["present"] and not r["music"].get("steady_tone")
 
 
+@pytest.mark.parametrize("name", ["hum50", "hum100_peak", "square", "tone_in_hiss"])
+def test_held_tones_beyond_a_clean_sine_are_not_music(tmp_path, name):
+    """Mains hum (with harmonics, sometimes peaking at 100 Hz), a square-wave buzzer, and a tone under hiss
+    are each one held pitch: not music and no tempo."""
+    t = np.arange(int(12 * SR)) / SR
+    rng = np.random.default_rng(0)
+    y, hz = {
+        "hum50": (sum(0.2 * 0.6 ** k * np.sin(2 * np.pi * 50 * (k + 1) * t) for k in range(5)), 50),
+        "hum100_peak": (0.05 * np.sin(2 * np.pi * 50 * t) + 0.2 * np.sin(2 * np.pi * 100 * t)
+                        + 0.1 * np.sin(2 * np.pi * 150 * t) + 0.01 * rng.normal(size=len(t)), 50),
+        "square": (0.2 * np.sign(np.sin(2 * np.pi * 440 * t)), 440),
+        "tone_in_hiss": (0.3 * np.sin(2 * np.pi * 440 * t) + 0.03 * rng.normal(size=len(t)), 440),
+    }[name]
+    r = analyze_audio(str(_write_av(tmp_path, y, name)))
+    assert not r["music"]["present"] and r["music"].get("tempo_bpm") is None
+    assert abs(r["music"]["steady_tone"]["hz"] - hz) < 0.05 * hz + 3
+
+
+def test_two_held_notes_are_still_music(tmp_path):
+    """A held fifth (C + G) is harmony, not a single tone with harmonics."""
+    t = np.arange(int(12 * SR)) / SR
+    y = 0.15 * (np.sin(2 * np.pi * 261.63 * t) + np.sin(2 * np.pi * 392.0 * t))
+    r = analyze_audio(str(_write_av(tmp_path, y, "fifth")))
+    assert r["music"]["present"] and not r["music"].get("steady_tone")
+
+
+def test_pad_without_drums_reports_no_tempo(tmp_path):
+    """A sustained chord with no percussion is music, but there is no beat to count."""
+    t = np.arange(int(12 * SR)) / SR
+    y = 0.08 * sum(np.sin(2 * np.pi * f * t) for f in (261.63, 329.63, 392.0, 523.25))
+    r = analyze_audio(str(_write_av(tmp_path, y, "pad_nobeat")))
+    assert r["music"]["present"] and r["music"].get("no_beat") and r["music"].get("tempo_bpm") is None
+
+
 def test_beat_survives_percussive_floor(music_mp4):
     r = analyze_audio(str(music_mp4))
     assert not r["music"].get("no_beat") and r["music"].get("tempo_bpm")

@@ -561,7 +561,7 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError as exc:  # wrong path to a video / breakdown.json / answers file
         if args.verbose:
             raise
-        print(f"rea-video: " + T(f"找不到文件：{exc.filename}", f"file not found: {exc.filename}"), file=sys.stderr)
+        print("rea-video: " + T(f"找不到文件：{exc.filename}", f"file not found: {exc.filename}"), file=sys.stderr)
         return 2
 
 

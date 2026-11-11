@@ -8,7 +8,7 @@
 The image readers' answer to `format` wins when present."""
 from __future__ import annotations
 
-from ..i18n import LangDict, T, join, semi
+from ..i18n import LangDict, T, semi
 
 from .base import FILMED, Aspect, Field, field_table, register, video_seen
 

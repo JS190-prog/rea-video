@@ -21,7 +21,7 @@ Everything here is deterministic and best effort: styles and animations are meas
 or the agent's look at the frames still settles fine typography (font family) and odd cases."""
 from __future__ import annotations
 
-from .i18n import LangDict, T, join, semi
+from .i18n import LangDict, T, join
 
 import re
 from difflib import SequenceMatcher

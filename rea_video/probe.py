@@ -5,7 +5,7 @@ entered the pipeline; an AIGC label means a generator declared itself) but it is
 stripped by social platforms, so absence proves nothing."""
 from __future__ import annotations
 
-from .i18n import LangDict, T, join
+from .i18n import LangDict, T
 
 import json
 import re

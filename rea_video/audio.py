@@ -11,7 +11,7 @@ numpy only (no librosa/scipy):
 - edit: do cuts land on beats / onsets?"""
 from __future__ import annotations
 
-from .i18n import LangDict, T, join, semi
+from .i18n import LangDict, T, semi
 
 import numpy as np
 
@@ -21,6 +21,8 @@ SR = 22050
 # share of a frame's energy in the percussive part. A sustained tone / drone sits near 1e-5; the quietest real hit
 # or drum in the eval set is ~5e-3. Below this there is no beat to count and no transient to call a sound effect
 PERC_FLOOR = 1e-3
+WEAK_PERC, WEAK_BEAT = 0.045, 0.2  # both this low: no drums, no tempo to report
+TONE_PERC_MAX = 0.06  # percussive share (90th pct) below which a held-tone check still runs
 N_FFT = 1024
 HOP = 256
 T_HOP = HOP / SR
@@ -89,6 +91,14 @@ def _runs(flags: np.ndarray, win_s: float, min_len_s: float = 0.6, merge_gap_s: 
         else:
             i += 1
     return [[round(a, 2), round(b, 2)] for a, b in segs if b - a >= min_len_s]
+
+
+def _seg_mask(segs: list[list[float]], n: int) -> np.ndarray:
+    """Boolean mask over n STFT frames, True inside the [start, end] second ranges."""
+    m = np.zeros(n, bool)
+    for a, b in segs:
+        m[int(a / T_HOP):int(b / T_HOP)] = True
+    return m
 
 
 def _chroma(S: np.ndarray, freqs: np.ndarray) -> np.ndarray:
@@ -180,9 +190,7 @@ def vocal_style(x: np.ndarray, Sh: np.ndarray, freqs: np.ndarray, voice_segs: li
     if len(beats) > 8:
         band = (freqs > 300) & (freqs < 3400)
         env = np.maximum(0, np.diff(np.log1p(Sh[:, band].sum(axis=1)), prepend=0))
-        inside = np.zeros(len(env), bool)
-        for a, b in voice_segs:
-            inside[int(a / T_HOP):int(b / T_HOP)] = True
+        inside = _seg_mask(voice_segs, len(env))
         pk = _peaks(env * inside, min_gap=int(0.08 / T_HOP), thr=float(np.percentile(env[inside], 75)) if inside.any() else 0)
         grid = np.sort(np.concatenate([beats, (beats[:-1] + beats[1:]) / 2]))
         if len(pk) > 10:
@@ -225,19 +233,39 @@ def sfx_type(S: np.ndarray, freqs: np.ndarray, frame_db: np.ndarray, c: int, hop
     return kind, {"dur": round(d, 3), "centroid_hz": int(centroid), "hf_ratio": round(hf_ratio, 3)}
 
 
-def steady_tone(Sh: np.ndarray, freqs: np.ndarray, frames: np.ndarray) -> float | None:
-    """Frequency of a single held pitch, or None. Every frame's harmonic energy sits in one narrow spectral
-    peak (a sine wave: one bin and its window leakage) and the peak stays on the same bin; a chord, a melody
-    or a pad spreads over several peaks or moves."""
+def steady_tone(x: np.ndarray, Sh: np.ndarray, frames: np.ndarray, n_fine: int = 8192) -> float | None:
+    """Frequency of a single held pitch, or None: a sine, a square-wave buzzer, mains hum.
+    Two checks. The strongest harmonic peak stays on the same bin from frame to frame (a melody moves).
+    And on a fine averaged spectrum (~2.7 Hz bins, so 50 Hz hum and its harmonics separate), nearly all the
+    energy sits on one fundamental and its whole-number multiples, with the fundamental itself clearly
+    present (a chord's notes are not multiples of a sounding note)."""
     M = Sh[frames] ** 2
     if len(M) < int(1.0 / T_HOP):
         return None
     pk = M.argmax(axis=1)
-    near = np.abs(np.arange(M.shape[1])[None, :] - pk[:, None]) <= 2
-    conc = (M * near).sum(axis=1) / (M.sum(axis=1) + 1e-12)
     mode = int(np.bincount(pk).argmax())
-    if float((np.abs(pk - mode) <= 1).mean()) > 0.9 and float(np.median(conc)) > 0.8:
-        return float(freqs[mode])
+    if float((np.abs(pk - mode) <= 1).mean()) <= 0.9:
+        return None
+    keep = np.repeat(frames, HOP)[:len(x)]
+    y = x[:len(keep)][keep]
+    n = len(y) // n_fine
+    if n < 1:
+        return None
+    win = np.hanning(n_fine)
+    P = (np.abs(np.fft.rfft(y[:n * n_fine].reshape(n, n_fine) * win, axis=1)) ** 2).mean(axis=0)
+    P[:int(20 * n_fine / SR)] = 0  # below hearing: DC and rumble
+    total = P.sum() + 1e-12
+    bins = np.arange(len(P))
+    top = int(P.argmax())
+    for m in (1, 2, 3):  # the loudest peak may be the 2nd or 3rd harmonic (hum often peaks at 100/120 Hz)
+        f0 = top / m
+        if f0 * SR / n_fine < 30:
+            break
+        k = np.maximum(1, np.round(bins / f0))
+        comb = np.abs(bins - k * f0) <= 3 + 0.01 * k * f0
+        fund = np.abs(bins - f0) <= 3
+        if P[comb].sum() / total > 0.9 and P[fund].sum() / total > 0.02:
+            return float(f0 * SR / n_fine)
     return None
 
 
@@ -261,6 +289,105 @@ def onset_envelope(path: str):
     frame_db = 10 * np.log10((S ** 2).mean(axis=1) + 1e-12)
     perc = np.maximum(0, np.diff(np.log1p(Sp.sum(axis=1)), prepend=0))
     return perc, frame_db, S, freqs, T_HOP, perc_share(S, Sp)
+
+
+def _tempo_and_beats(music: dict, perc: np.ndarray, perc90: float, music_segs: list[list[float]]) -> np.ndarray:
+    """Tempo, beat strength and beat times from the percussive onset curve; writes them into music and returns
+    the beat times (seconds). Marks no_beat instead when there are no drums to count."""
+    beats = np.array([])
+    env = perc - perc.mean()
+    ac = np.correlate(env, env, "full")[len(env) - 1:]
+    ac /= ac[0] + 1e-9
+    lo, hi = int(60 / 190 / T_HOP), int(60 / 60 / T_HOP)
+    lag = lo + int(np.argmax(ac[lo:hi])) if hi < len(ac) else 0
+    if lag and not music.get("no_beat") and perc90 < WEAK_PERC and ac[lag] < WEAK_BEAT:
+        # a pad or drone with no drums: the onset curve is codec ripple and its best "period" is noise
+        music["no_beat"] = True
+    if lag and not music.get("no_beat"):
+        tempo = 60 / (lag * T_HOP)
+        if tempo < 75:  # prefer the common 75-180 BPM octave
+            tempo *= 2
+            lag = max(1, lag // 2)
+        music["tempo_bpm"] = round(float(tempo), 1)
+        music["tempo_alternatives"] = [round(float(tempo) / 2, 1), round(float(tempo) * 2, 1)]
+        music["beat_strength"] = round(float(ac[lag]), 3)
+        # beat grid: best phase of a comb at the tempo, then snap to local onset peaks
+        phase = int(np.argmax([perc[p::lag].sum() for p in range(lag)]))
+        grid = np.arange(phase, len(perc), lag)
+        snapped = []
+        for g in grid:
+            a, b = max(0, g - 3), min(len(perc), g + 4)
+            snapped.append(a + int(np.argmax(perc[a:b])))
+        beats = np.array(snapped) * T_HOP
+        in_music = np.zeros_like(beats, bool)
+        for a, b in music_segs:
+            in_music |= (beats >= a) & (beats <= b)
+        beats = beats[in_music]
+        music["beats"] = [round(float(b), 3) for b in beats[:400]]
+    return beats
+
+
+def _section_changes(C: np.ndarray, hb_db: np.ndarray) -> list[float]:
+    """Section boundaries (seconds): chroma + loudness novelty, comparing the 4 s before and after each point."""
+    blk = int(round(0.5 / T_HOP))
+    cb = np.array([C[i:i + blk].mean(axis=0) for i in range(0, len(C) - blk, blk)])
+    eb = np.array([hb_db[i:i + blk].mean() for i in range(0, len(C) - blk, blk)])
+    k = 8
+    nov = np.zeros(len(cb))
+    for i in range(k, len(cb) - k):
+        a, b = cb[i - k:i].mean(axis=0), cb[i:i + k].mean(axis=0)
+        cos = float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+        nov[i] = (1 - cos) * 4 + abs(eb[i - k:i].mean() - eb[i:i + k].mean()) / 12
+    pk = _peaks(nov, min_gap=k, thr=max(0.25, float(np.percentile(nov, 90))))
+    return [round(float(i * 0.5), 2) for i in pk][:20]
+
+
+def _sfx(S: np.ndarray, freqs: np.ndarray, perc: np.ndarray, share: np.ndarray, frame_db: np.ndarray, peak_db: float,
+         dur: float, speech_segs: list[list[float]], music_segs: list[list[float]], beats: np.ndarray,
+         marks: list[float]) -> dict:
+    """Salient transients outside speech and off the beat grid, typed coarsely, with sync to visual marks."""
+    onset = perc
+    speech_frame = _seg_mask(speech_segs, len(onset))
+    music_frame = _seg_mask(music_segs, len(onset))
+    w2 = int(round(1.0 / T_HOP))
+    loc = np.array([np.percentile(onset[max(0, i - w2):i + w2], 90) for i in range(len(onset))])
+    cand = _peaks(onset, min_gap=int(0.06 / T_HOP), thr=0.0)
+    beat_frames = (beats / T_HOP).astype(int) if len(beats) else np.array([], int)
+    events = []
+    for c in cand:
+        strength = float(onset[c] / (loc[c] + 1e-6))
+        # deterministic SFX detection inside a full mix is weak (validated: ~0.2 precision on
+        # capsule-cinema cue sheets), so only keep salient transients that stand out from
+        # everything around them and sit in a gap of the voice track; the VLM lists the rest
+        if strength < 3.0 or frame_db[c] < peak_db - 30 or speech_frame[c]:
+            # inside narration, consonant onsets after pauses look exactly like small SFX
+            continue
+        if music_frame[c] and strength < 6.0:
+            continue  # under a music bed only very prominent transients are trusted
+        if len(beat_frames) and np.min(np.abs(beat_frames - c)) * T_HOP < 0.05:
+            continue
+        if not has_transient(share, c) or c * T_HOP > dur - 0.1:
+            continue  # the onset curve is relative: a held tone's codec noise wobbles it; the last 0.1 s is the track stopping
+        kind, info = sfx_type(S, freqs, frame_db, c, T_HOP)
+        events.append({"t": round(c * T_HOP, 3), "type": kind, **info, "strength": round(strength, 1),
+                       "source": "deterministic", "confidence": "low"})
+    # dense click runs = typing / UI clicks
+    ts = np.array([e["t"] for e in events])
+    for e in events:
+        if e["type"] in ("click", "pop", "hit") and ((np.abs(ts - e["t"]) < 0.6).sum() >= 4):
+            e["type"] = "typing"
+    synced = 0
+    for e in events:
+        if marks:
+            d = min(abs(e["t"] - m) for m in marks)
+            e["sync_with_visual"] = bool(d < 0.12)
+            synced += e["sync_with_visual"]
+    types: dict[str, int] = {}
+    for e in events:
+        types[e["type"]] = types.get(e["type"], 0) + 1
+    return {"present": len(events) >= 3, "method": "salient transients in voice gaps (low confidence; VLM adds the full list)", "count": len(events), "per_minute": round(len(events) / dur * 60, 1),
+            "types": types, "types_zh": {SFX_TYPE_ZH[k]: v for k, v in types.items()},
+            "sync_ratio": round(synced / len(events), 3) if events and marks else None, "events": events[:300]}
 
 
 def analyze_audio(path: str, cut_times: list[float] | None = None, visual_marks: list[float] | None = None) -> dict:
@@ -323,116 +450,33 @@ def analyze_audio(path: str, cut_times: list[float] | None = None, visual_marks:
     # ---------------- music: tempo, beats, key, sections ------------------------------------
     music: dict = {"present": music_ratio > 0.25, "ratio": round(music_ratio, 3), "segments": music_segs[:40]}
     beats = np.array([])
-    if music["present"] and float(np.percentile(share, 90)) < PERC_FLOOR:
+    perc90 = float(np.percentile(share, 90))
+    if music["present"] and perc90 < PERC_FLOOR:
         music["no_beat"] = True  # a held tone / drone: nothing percussive to count a tempo from
-        mframes = np.zeros(len(Sh), bool)
-        for a_, b_ in music_segs:
-            mframes[int(a_ / T_HOP):int(b_ / T_HOP)] = True
-        hz = steady_tone(Sh, freqs, mframes & ~silent)
+    if music["present"] and perc90 < TONE_PERC_MAX:
+        # checked a little above the no-beat floor: hiss under a tone, or low hum, leaks a few percent into the
+        # percussive part and can fake a weak beat, while real drums sit far above this
+        hz = steady_tone(x, Sh, _seg_mask(music_segs, len(Sh)) & ~silent)
         if hz:
             # one pitch held the whole time (test tone, beep, mains hum): it passes the "loud and harmonic" bed test,
             # but there is no melody, no harmony and no beat, so it is not music
             music = {"present": False, "ratio": music["ratio"], "segments": music_segs[:40],
                      "steady_tone": {"hz": round(hz, 1), "segments": music_segs[:40]}}
     if music["present"]:
-        env = perc - perc.mean()
-        ac = np.correlate(env, env, "full")[len(env) - 1:]
-        ac /= ac[0] + 1e-9
-        lo, hi = int(60 / 190 / T_HOP), int(60 / 60 / T_HOP)
-        lag = lo + int(np.argmax(ac[lo:hi])) if hi < len(ac) else 0
-        if lag and not music.get("no_beat"):
-            tempo = 60 / (lag * T_HOP)
-            if tempo < 75:  # prefer the common 75-180 BPM octave
-                tempo *= 2
-                lag = max(1, lag // 2)
-            music["tempo_bpm"] = round(float(tempo), 1)
-            music["tempo_alternatives"] = [round(float(tempo) / 2, 1), round(float(tempo) * 2, 1)]
-            music["beat_strength"] = round(float(ac[lag]), 3)
-            # beat grid: best phase of a comb at the tempo, then snap to local onset peaks
-            phase = int(np.argmax([perc[p::lag].sum() for p in range(lag)]))
-            grid = np.arange(phase, len(perc), lag)
-            snapped = []
-            for g in grid:
-                a, b = max(0, g - 3), min(len(perc), g + 4)
-                snapped.append(a + int(np.argmax(perc[a:b])))
-            beats = np.array(snapped) * T_HOP
-            in_music = np.zeros_like(beats, bool)
-            for a, b in music_segs:
-                in_music |= (beats >= a) & (beats <= b)
-            beats = beats[in_music]
-            music["beats"] = [round(float(b), 3) for b in beats[:400]]
+        beats = _tempo_and_beats(music, perc, perc90, music_segs)
         C = _chroma(Sh, freqs)
-        mask = np.zeros(len(C), bool)
-        for a, b in music_segs:
-            mask[int(a / T_HOP):int(b / T_HOP)] = True
+        mask = _seg_mask(music_segs, len(C))
         if mask.sum() > 50:
             music["key"] = _key(C[mask].mean(axis=0))
-            # sections: chroma + loudness novelty with a 4 s checkerboard-ish comparison
-            blk = int(round(0.5 / T_HOP))
-            cb = np.array([C[i:i + blk].mean(axis=0) for i in range(0, len(C) - blk, blk)])
-            eb = np.array([hb_db[i:i + blk].mean() for i in range(0, len(C) - blk, blk)])
-            k = 8
-            nov = np.zeros(len(cb))
-            for i in range(k, len(cb) - k):
-                a, b = cb[i - k:i].mean(axis=0), cb[i:i + k].mean(axis=0)
-                cos = float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
-                nov[i] = (1 - cos) * 4 + abs(eb[i - k:i].mean() - eb[i:i + k].mean()) / 12
-            pk = _peaks(nov, min_gap=k, thr=max(0.25, float(np.percentile(nov, 90))))
-            music["section_changes"] = [round(float(i * 0.5), 2) for i in pk][:20]
+            music["section_changes"] = _section_changes(C, hb_db)
         music["start"] = music_segs[0][0] if music_segs else None
         music["end"] = music_segs[-1][1] if music_segs else None
 
     if voice.get("present") and music.get("present"):
         voice.update(vocal_style(x, Sh, freqs, speech_segs, beats))
 
-    # ---------------- SFX ---------------------------------------------------------------
-    onset = perc
-    speech_frame = np.zeros(len(onset), bool)
-    for a_, b_ in speech_segs:
-        speech_frame[int(a_ / T_HOP):int(b_ / T_HOP)] = True
-    music_frame = np.zeros(len(onset), bool)
-    for a_, b_ in music_segs:
-        music_frame[int(a_ / T_HOP):int(b_ / T_HOP)] = True
-    w2 = int(round(1.0 / T_HOP))
-    loc = np.array([np.percentile(onset[max(0, i - w2):i + w2], 90) for i in range(len(onset))])
-    cand = _peaks(onset, min_gap=int(0.06 / T_HOP), thr=0.0)
-    beat_frames = (beats / T_HOP).astype(int) if len(beats) else np.array([], int)
-    events = []
-    for c in cand:
-        strength = float(onset[c] / (loc[c] + 1e-6))
-        # deterministic SFX detection inside a full mix is weak (validated: ~0.2 precision on
-        # capsule-cinema cue sheets), so only keep salient transients that stand out from
-        # everything around them and sit in a gap of the voice track; the VLM lists the rest
-        if strength < 3.0 or frame_db[c] < peak_db - 30 or speech_frame[c]:
-            # inside narration, consonant onsets after pauses look exactly like small SFX
-            continue
-        if music_frame[c] and strength < 6.0:
-            continue  # under a music bed only very prominent transients are trusted
-        if len(beat_frames) and np.min(np.abs(beat_frames - c)) * T_HOP < 0.05:
-            continue
-        if not has_transient(share, c) or c * T_HOP > dur - 0.1:
-            continue  # the onset curve is relative: a held tone's codec noise wobbles it; the last 0.1 s is the track stopping
-        kind, info = sfx_type(S, freqs, frame_db, c, T_HOP)
-        events.append({"t": round(c * T_HOP, 3), "type": kind, **info, "strength": round(strength, 1),
-                       "source": "deterministic", "confidence": "low"})
-    # dense click runs = typing / UI clicks
-    ts = np.array([e["t"] for e in events])
-    for i, e in enumerate(events):
-        if e["type"] in ("click", "pop", "hit") and ((np.abs(ts - e["t"]) < 0.6).sum() >= 4):
-            e["type"] = "typing"
-    marks = sorted(set((cut_times or []) + (visual_marks or [])))
-    synced = 0
-    for e in events:
-        if marks:
-            d = min(abs(e["t"] - m) for m in marks)
-            e["sync_with_visual"] = bool(d < 0.12)
-            synced += e["sync_with_visual"]
-    types: dict[str, int] = {}
-    for e in events:
-        types[e["type"]] = types.get(e["type"], 0) + 1
-    sfx = {"present": len(events) >= 3, "method": "salient transients in voice gaps (low confidence; VLM adds the full list)", "count": len(events), "per_minute": round(len(events) / dur * 60, 1),
-           "types": types, "types_zh": {SFX_TYPE_ZH[k]: v for k, v in types.items()},
-           "sync_ratio": round(synced / len(events), 3) if events and marks else None, "events": events[:300]}
+    sfx = _sfx(S, freqs, perc, share, frame_db, peak_db, dur, speech_segs, music_segs, beats,
+               sorted(set((cut_times or []) + (visual_marks or []))))
 
     # ---------------- editing vs audio -----------------------------------------------------
     out = {
@@ -444,6 +488,7 @@ def analyze_audio(path: str, cut_times: list[float] | None = None, visual_marks:
         # compatibility keys used by the classifier / reports
         "speech_likely": voice["present"], "music_likely": music["present"], "tempo_bpm": music.get("tempo_bpm"),
     }
+    onset = perc
     cuts = np.array([c for c in (cut_times or []) if c > 0.2])
     on = _peaks(onset, min_gap=int(0.1 / T_HOP), thr=float(np.percentile(onset, 80))) * T_HOP
     if len(cuts) and len(on):

@@ -80,15 +80,22 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
     LOG.info("detected %d shots", len(shots))
     marks = [s.t(b) for s in shots for b in s.beats]
     audio = analyze_audio(str(video), [s.start for s in shots[1:]], marks) if info.has_audio else {"has_audio": False}
-    stem_info: dict = {}
+    stems_job = None
     if info.has_audio and stems:  # strip the soundtrack: original.wav / vocals.wav / music.wav
         from .audio import refine_with_stems
         from .stems import extract_stems
 
-        LOG.info("separating stems (vocals / music)")
-        stem_info = extract_stems(video, out)
-        if stem_info.get("ok"):
-            refine_with_stems(audio, stem_info["vocals"])
+        def run_stems() -> dict:
+            got = extract_stems(video, out)
+            if got.get("ok"):
+                refine_with_stems(audio, got["vocals"])  # only rewrites the vocal-style fields, read after the shot loop
+            return got
+
+        # the separation model runs in native code and leaves the shot analysis free to run alongside it
+        LOG.info("separating stems (vocals / music) in the background")
+        stems_pool = ThreadPoolExecutor(max_workers=1)
+        stems_job = stems_pool.submit(run_stems)
+        stems_pool.shutdown(wait=False)
 
     # ---------------- packaging layer: subtitles / 花字 / stickers on one timeline ---------------
     pack = None
@@ -264,6 +271,7 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
             else:
                 LOG.warning("VLM: every call failed (%s); result is deterministic only", (vlm_info["errors"] or ["?"])[0])
 
+    stem_info: dict = stems_job.result() if stems_job else {}
     breakdown = {
         "schema": SCHEMA, "tool": {"name": "rea-video", "version": __version__}, "lang": lang,
         "source": {"path": str(video), "filename": video.name, "sha256_head": _sha256_head(video), "width": info.width,

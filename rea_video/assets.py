@@ -14,7 +14,7 @@ rendered layouts: rectangles or regions whose texture is photographic (high grey
 entropy) or that hold dense small UI text (a screenshot pasted into a card)."""
 from __future__ import annotations
 
-from .i18n import LangDict, T, join
+from .i18n import LangDict, T
 
 import cv2
 import numpy as np
