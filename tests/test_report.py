@@ -161,3 +161,36 @@ def test_open_questions_say_when_nobody_heard_the_sound(breakdown):
     b["audio"]["has_audio"] = False
     b["analysis"]["vlm"] = {"status": "off", "used": False}
     assert not any("声音没有模型听过" in q for q in open_questions(b))
+
+
+def test_narrative_line_from_review_and_whole_video(breakdown):
+    from rea_video import narrative
+
+    b, out = breakdown
+    set_lang("zh")
+    b = json.loads(json.dumps(b))
+    assert "没有叙事线" in markdown(b) and "在讲什么" not in "".join(l for l in markdown(b).split("\n") if l.startswith("| #"))
+    last = b["shots"][-1]
+    b["whole_video_vlm"] = {"segments": [{"start": 0, "end": b["shots"][0]["end"], "role": "抓注意", "beat": "用一张静帧提问"},
+                                         {"start": b["shots"][0]["end"], "end": last["end"], "role": "info", "beat": "逐条讲解"}]}
+    told = narrative.shot_roles(b)
+    assert told[1]["role"] == "hook" and told[1]["source"] == "vlm" and told[last["index"]]["role"] == "info"
+    tasks, answers = build_tasks(b, str(out))
+    assert "narrative" in answers["shots"][0] and "抓注意" in tasks["instructions"]
+    for a, r in zip(answers["shots"], b["shots"]):
+        a["label_probs"] = {r["base"]["label"]: 1.0}
+    answers["shots"][-1]["narrative"] = {"role": "给结论", "point": "一句话收束观点"}
+    answers["shots"][0]["narrative"] = {"role": "nonsense", "point": ""}
+    apply_answers(b, answers, by="tester")
+    b = finalize(b, out)
+    assert b["shots"][-1]["narrative"] == {"role": "payoff", "point": "一句话收束观点", "role_zh": "给结论", "source": "agent"}
+    assert b["shots"][0]["narrative"]["source"] == "vlm"  # an empty review answer leaves the VLM's reading in place
+    assert b["narrative"][0]["role"] == "hook" and b["narrative"][-1]["shots"] == [last["index"]]
+    md = (out / "report.md").read_text(encoding="utf-8")
+    assert "**叙事线**" in md and "给结论" in md and "一句话收束观点" in md
+    assert "在讲什么" in next(l for l in md.split("\n") if l.startswith("| # "))
+    set_lang("en")
+    try:
+        assert narrative.shot_roles(b)[last["index"]]["role_zh"] == "deliver the conclusion"
+    finally:
+        set_lang("zh")

@@ -264,6 +264,12 @@ def cmd_summary(args) -> int:
     s = b["summary"]
     lines = [f"{b['source']['filename']} | {b['source']['duration']}s {b['source']['width']}x{b['source']['height']} {b['source']['fps']}fps",
              f"{T('结论', 'Verdict')}: {s['verdict']}", f"{T('置信度', 'Confidence')}: {s['confidence']}", f"VLM: {s.get('vlm') or vlm_note(b['analysis']['vlm'])}", ""]
+    from . import narrative
+
+    steps = narrative.beats(b)
+    if steps:
+        lines[-1:-1] = [T("叙事线", "Narrative") + ": " + " → ".join(
+            f"#{s['shots'][0]}" + (f"-{s['shots'][-1]}" if len(s['shots']) > 1 else "") + f" {s['role_zh'] or (s['points'] or ['?'])[0][:16]}" for s in steps)]
     vc = b.get("video_context") or {}
     if vc.get("transcoded"):
         lines.append(T("平台转码: {p}（噪声类证据失效；原生 30fps 无重复帧: {n}）", "Platform transcode: {p} (noise evidence unusable; native 30fps without duplicate frames: {n})",

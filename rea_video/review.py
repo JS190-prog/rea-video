@@ -9,7 +9,8 @@ import shlex
 import time
 
 from .classify import LABEL_ZH, LABELS, top
-from . import aspects
+from . import aspects, narrative
+from .narrative import ROLE_GUIDE
 from .vlm import SHOT_PROMPT, shot_hints
 
 SHOOT_LIKE = ("live_action", "avatar", "stop_motion", "film_footage")  # shots where "how was it shot / lit" applies
@@ -56,6 +57,11 @@ video_prompt（复刻该镜头的<PROMPT_LANG>视频提示词：先写景别、�
 工具已经测了景别、主体光比、主光左右/上下、软硬、色温、背景虚化（见每镜 aspects），你主要补：机位角度、
 拍摄方式（自拍/支架）、主光是什么光源、眼神光、轮廓光/背景灯、画面里可见的光源；和测量冲突时写明依据。
 最后在答案顶层的 aspects 里写整片：机位/场景、推测设备、整体布光、剪辑手法、视频形式。
+
+每个镜头再填 narrative（这个镜头在讲什么）：role 选它在叙事上的作用，point 用一句话写它讲的那一点（去掉具体的人和产品也成立的写法，
+例如"用反常识的数字开场"而不是"说水豚每天睡 12 小时"）。先通读 storyboard.jpg 和每镜的 said（这一镜里的字幕）再填，作用是相对整片说的：
+{ROLE_GUIDE}
+报告会把它连成「叙事线」：复刻时保留这条线，把案例和素材换成自己的。
 
 答案顶层的 cast 写整片的角色、场景和道具（看 storyboard.jpg 和各镜截图）：characters 每个主要角色一条（id 编号、name 称呼、kind person|animal|cartoon|avatar|product|other、
 look 外观写到能据此再画出同一个角色、role 作用、voice 音色、shots 出场镜头号）；同一个角色在不同镜头要认成同一个。scenes 每个地点一条（id、where、when、look、shots）；
@@ -112,6 +118,10 @@ def build_tasks(breakdown: dict, out_dir: str) -> tuple[dict, dict]:
 
     pats = patterns()
     shots = []
+    said: dict[int, str] = {}  # subtitles inside each shot: what the shot says, for its place in the story
+    subs = [c for c in (breakdown.get("packaging") or {}).get("text_cues", []) if c.get("kind") == "subtitle" and c.get("text")]
+    for rec in breakdown["shots"]:
+        said[rec["index"]] = " ".join(c["text"] for c in subs if rec["start"] <= (c["t0"] + c["t1"]) / 2 < rec["end"])[:160]
     for rec in breakdown["shots"]:
         # only the deterministic layer is shown: the agent should judge independently of any VLM answer
         ranked = sorted(rec["deterministic"]["probs"].items(), key=lambda kv: -kv[1])
@@ -132,6 +142,7 @@ def build_tasks(breakdown: dict, out_dir: str) -> tuple[dict, dict]:
             "hints": shot_hints(rec["features"], rec["deterministic"]["facts"], dl, dp).split("; 确定性初判=")[0],
             **({"aspects": {k: v["result"] for k, v in (rec.get("aspects") or {}).items() if v.get("result")}} if shoot_like else {}),
             # the sheet already holds first / middle / last; separate first / last frames would triple the image tokens
+            **({"said": said[rec["index"]]} if said.get(rec["index"]) else {}),
             "images": {"sheet": rec["assets"]["sheet"], **({"strip": rec["assets"]["strip"]} if rec["assets"].get("strip") else {})},
             "_shoot_like": shoot_like,
         })
@@ -173,7 +184,7 @@ def build_tasks(breakdown: dict, out_dir: str) -> tuple[dict, dict]:
         tasks["packaging"] = pk_tasks
     answers = {"by": "", "shots": [{"id": s["id"], "time": f"{s['start']:.2f}-{s['end']:.2f}",
                                      "label_probs": {}, "image_source": "unknown",
-                                     "evidence": [], "description": "", "embedded_assets": [], "ai_edits": [],
+                                     "evidence": [], "description": "", "narrative": {"role": "", "point": ""}, "embedded_assets": [], "ai_edits": [],
                                      "replication": {"image_prompt": "", "video_prompt": "", "video_prompt_en": ""},
                                      **({"aspects": aspects.review_template()} if shoot[s["id"]] else {})} for s in shots],
                "aspects": aspects.review_template(video=True),
@@ -232,7 +243,7 @@ def _clean(ans: dict) -> tuple[dict | None, str | None]:
     return {"label_probs": soft, "raw_probs": {k: round(v / total, 3) for k, v in vals.items()}, "image_source": src,
             "evidence": [str(x) for x in (ans.get("evidence") or [])][:8], "description": str(ans.get("description", "")),
             "embedded_assets": assets, "replication": rep, "aspects": aspects.clean_answers(ans.get("aspects")),
-            "split_suggestion": split,
+            "split_suggestion": split, "narrative": narrative.clean(ans.get("narrative")),
             "ai_edits": [{"kind": e["kind"], "evidence": str(e.get("evidence", ""))} for e in (ans.get("ai_edits") or [])
                          if isinstance(e, dict) and e.get("kind") in EDIT_KINDS]}, None
 

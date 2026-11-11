@@ -730,6 +730,15 @@ def finalize(breakdown: dict, out: Path, engine: str | None = None) -> dict:
             res = {k: v.get("result") for k, v in (rec.get("aspects") or {}).items() if v.get("result")}
             rec["replication"]["shoot"] = {"summary": aspects.shot_text(rec), **res}
 
+    from . import narrative
+
+    told = narrative.shot_roles(breakdown)
+    for rec in shot_records:  # rewritten on every finalize: a later review replaces the VLM's reading
+        rec.pop("narrative", None)
+        if rec["index"] in told:
+            rec["narrative"] = told[rec["index"]]
+    breakdown["narrative"] = narrative.beats(breakdown)
+
     breakdown["audio_plan"] = merge_audio_with_vlm(audio, breakdown.get("whole_video_vlm"))
     if pack:
         from .packaging import finalize_pack

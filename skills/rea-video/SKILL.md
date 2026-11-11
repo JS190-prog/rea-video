@@ -43,7 +43,7 @@ rea-video summary out/ref/breakdown.json
 
 ```bash
 rea-video review out/ref                      # 写出 review_tasks.json（每镜要看的图、工具判断、优先级）和 review_answers.json（答案模板）
-# 读 review_tasks.json 的 instructions，逐镜看 images 里的图（priority=high 必看），把 label_probs / evidence / description / embedded_assets 填进 review_answers.json；若某镜头实为多刀合并（暗底图形与暗底口播交替时容易被合成一个长镜头），可加 split_suggestion（cuts 切点秒数 + labels 各段类别 + note），报告会在该镜头标注拆分建议，镜头边界本身不变
+# 读 review_tasks.json 的 instructions，逐镜看 images 里的图（priority=high 必看），把 label_probs / evidence / description / narrative / embedded_assets 填进 review_answers.json；narrative 是「这个镜头在讲什么」：role 选叙事作用（抓注意 / 交代背景 / 补信息 / 给证据 / 转折 / 给结论 / 引导行动 / 渲染情绪），point 一句话写它讲的那一点，报告会连成「叙事线」；若某镜头实为多刀合并（暗底图形与暗底口播交替时容易被合成一个长镜头），可加 split_suggestion（cuts 切点秒数 + labels 各段类别 + note），报告会在该镜头标注拆分建议，镜头边界本身不变
 # 顶层 cast 填整片的角色 / 场景 / 道具（同一个角色跨镜头认成同一个，外观写到能据此复刻）和一句视觉风格；没开 VLM 时报告的「角色、场景与道具」一节全靠这里
 rea-video apply-review out/ref --by <你的名字>  # 并入：重写 breakdown.json、report.md、report.html，打印改判了哪些镜头
 rea-video summary out/ref/breakdown.json      # 用并入后的结果写回复
@@ -80,7 +80,7 @@ rea-video summary out/ref/breakdown.json      # 用并入后的结果写回复
 
 ## 2. 交付给用户
 
-按 `references/output-template.md` 回复：先一句话结论，再内容与角色（这条视频讲什么、主要角色和场景），然后复刻方案（按生成单元 / 拍摄场次组织）、分镜表、剪辑包装、声音、真实素材清单、不确定点，最后给 `report.html` 路径。不要把 breakdown.json 贴进对话。
+按 `references/output-template.md` 回复：先一句话结论，再内容与角色（这条视频讲什么、主要角色和场景），叙事线（每一步在抓注意、补信息还是给结论，见 `report.md`「内容与结构」；建议用户保留这条线、换成自己的案例和素材来重写，不只是换个主角），然后复刻方案（按生成单元 / 拍摄场次组织）、分镜表、剪辑包装、声音、真实素材清单、不确定点，最后给 `report.html` 路径。不要把 breakdown.json 贴进对话。
 
 **报告和回复都用用户的语言。**语言的判断顺序：用户明确指定的语言（「用英文出报告」「report in Chinese」）> 用户提问所用的语言 > `rea-video memory` 里的 `lang` 偏好 > 中文。
 - 工具支持 `--lang zh` 和 `--lang en`：`decompose` 时就传对，报告文件（`report.html` / `report.md`）、`summary` 输出、VLM 的画面描述和提示词都会是该语言；忘了传可以在 `apply-review out/ref --lang en` 时补上（会重新生成结论和报告文字；VLM 已写好的描述和提示词保持原语言）。看图复核时，`review_answers.json` 里的 evidence / description / prompt 也用这个语言写。

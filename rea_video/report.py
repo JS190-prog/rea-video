@@ -11,7 +11,7 @@ import html
 import re
 from pathlib import Path
 
-from . import aspects, entities
+from . import aspects, entities, narrative
 from .classify import LABEL_ZH
 from .i18n import LangDict, T, join, lang, semi
 from .packaging import layer_name, anchor_text
@@ -182,7 +182,7 @@ def _content_md(b: dict) -> list[str]:
     if not w and not lines:
         L.append(T("- 没有整片的内容概括（需要 VLM 或 agent 看完整片）；字幕原文见「剪辑包装层」",
                    "- No whole-video summary (needs the VLM or an agent watching the full video); subtitle text is under “Packaging layer”"))
-        return L
+        return L + _narrative_md(b)
     if w.get("summary"):
         L.append(T("- 概括：{s}", "- Summary: {s}", s=w["summary"]))
     bits = []
@@ -199,6 +199,7 @@ def _content_md(b: dict) -> list[str]:
         L += ["", T("**结构时间轴**", "**Structure**")]
         L += _table([T("时间", "Time"), T("这一段在做什么", "Beat"), T("文案", "Copy"), T("声音", "Audio")],
                     [[_span(sg.get("start"), sg.get("end")), sg.get("beat", ""), sg.get("copy", ""), sg.get("audio", "")] for sg in segs])
+    L += _narrative_md(b)
     if lines:
         n = w.get("narration") or {}
         head = T("**脚本**", "**Script**")
@@ -207,6 +208,20 @@ def _content_md(b: dict) -> list[str]:
         L += ["", head]
         L += _table([T("时间", "Time"), T("谁", "Who"), T("台词 / 旁白", "Line")],
                     [[_span(ln["start"], ln["end"]), ln["speaker"] or T("旁白", "narration"), ln["text"]] for ln in lines], fold_title=T("全部 {n} 句", "all {n} lines", n=len(lines)))
+    return L
+
+
+def _narrative_md(b: dict) -> list[str]:
+    """The story as a sequence of jobs (hook, information, conclusion ...), each with the point it makes."""
+    steps = narrative.beats(b)
+    if not steps:
+        return ["", T("- 没有叙事线（每个镜头在讲什么：需要 VLM 整片分析，或 agent 看图后在 `review_answers.json` 每镜的 `narrative` 里填）",
+                      "- No narrative line (what each shot is doing in the story: needs the VLM whole-video pass, or an agent filling `narrative` per shot in `review_answers.json`)")]
+    L = ["", T("**叙事线**", "**Narrative line**"), "",
+         T("复刻时保留这条线：每一步的顺序和作用照搬，讲的那一点换成自己的案例、数据和素材，就不只是换个主角。",
+           "Keep this line in a remake: same order, same job at each step, with the point refilled from your own cases, numbers and material, so it is more than a change of subject.")]
+    L += _table([T("时间", "Time"), T("镜头", "Shots"), T("作用", "Job"), T("在讲什么", "What it says")],
+                [[_span(s["start"], s["end"]), _shots_str(s["shots"]), s["role_zh"] or "—", semi().join(s["points"])] for s in steps])
     return L
 
 
@@ -479,14 +494,19 @@ def _remake_md(b: dict) -> list[str]:
 
 def _shotlist_md(b: dict) -> list[str]:
     units = _unit_of(b)
+    told = narrative.shot_roles(b)
     rows = []
     for r in b["shots"]:
         base = r["base"]
         desc = ((r.get("vlm") or r.get("review") or {}).get("description") or "").replace("\n", " ")
-        rows.append([r["index"], fmt_time(r["start"]), f"{r['duration']:.2f}s", f"{base['label_zh']} {base['confidence']:.0%}", _origin(r), _layers(r),
+        n = told.get(r["index"]) or {}
+        says = (n.get("role_zh") or "") + (_colon() if n.get("role_zh") and n.get("point") else "") + (n.get("point") or "")
+        rows.append([r["index"], fmt_time(r["start"]), f"{r['duration']:.2f}s", *([says[:48] + ("…" if len(says) > 48 else "") or "—"] if told else []),
+                     f"{base['label_zh']} {base['confidence']:.0%}", _origin(r), _layers(r),
                      CAMERA_ZH.get(r["features"].get("camera", "unknown"), "—"), desc[:40] + ("…" if len(desc) > 40 else ""), _route(r, units)])
     return ["", T("## 分镜表", "## Shot list")] + _table(
-        ["#", T("时间", "Time"), T("时长", "Length"), T("底层画面", "Base picture"), T("素材来源", "Material"), T("叠加层", "Overlays"), T("运镜", "Camera"),
+        ["#", T("时间", "Time"), T("时长", "Length"), *([T("在讲什么", "What it says")] if told else []),
+         T("底层画面", "Base picture"), T("素材来源", "Material"), T("叠加层", "Overlays"), T("运镜", "Camera"),
          T("画面", "Picture"), T("复刻", "Remake")], rows)
 
 

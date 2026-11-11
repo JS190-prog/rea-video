@@ -327,6 +327,8 @@ WHOLE_PROMPT = """你是短视频拆解专家。完整观看并**仔细收听**�
 剪辑包装要拆全：字幕之外的花字、标题、章节牌、标签（含跟着物体走的标注）逐个列出时间、样式和动画；
 后期贴上去的表情包、GIF 动图、emoji、贴纸、画中画小窗、箭头圈注逐个列出出现/消失时间和位置（画面本身的内容不算）。
 角色要跨镜头认成同一个：给每个主要角色（人、动物、卡通形象、数字人、作为主角的商品）一个编号，外观写到能据此把同一个角色再画出来；场景同理（同一地点不同机位算一个场景）；道具 / 商品 / Logo 单独列。
+结构要拆出叙事线：segments 每一段除了写 beat（这一段在讲什么，一句话），还要在 role 里选它在叙事上的作用：
+<<NARRATIVE_ROLES>>
 已检测到的镜头切分（秒，按顺序即镜头 #1、#2…）：{shots}
 
 只返回 JSON：
@@ -334,7 +336,7 @@ WHOLE_PROMPT = """你是短视频拆解专家。完整观看并**仔细收听**�
   "summary": "一句话概括",
   "format": "口播|剧情|商品展示|知识讲解|MV|混剪|影视解说|其他",
   "hook": "开头 3 秒如何抓人",
-  "segments": [{{"start": 0.0, "end": 3.0, "beat": "这一段在叙事上的作用", "copy": "这一段的旁白/字幕文案", "audio": "人声/音乐/音效"}}],
+  "segments": [{{"start": 0.0, "end": 3.0, "role": "<<NARRATIVE_ENUM>>", "beat": "这一段在讲什么（一句话，换个题材也能照着写的那种）", "copy": "这一段的旁白/字幕文案", "audio": "人声/音乐/音效"}}],
   "narration": {{"type": "tts|human|none|mixed", "voice": "性别/年龄感/音色", "style": "语速、情绪、口癖", "language": "zh|en|...",
                  "lines": [{{"start": 0.0, "end": 2.0, "speaker": "角色编号或 旁白", "text": "台词/旁白原文"}}]}},
   "music": {{"present": true, "segments": [{{"start": 0.0, "end": 10.0}}], "style": "风格", "genre": "流派", "mood": "情绪",
@@ -365,6 +367,9 @@ WHOLE_PROMPT = """你是短视频拆解专家。完整观看并**仔细收听**�
 
 
 from .aspects import prompt_block as _aspect_block  # noqa: E402
+from .narrative import ROLE_GUIDE as _ROLE_GUIDE, ROLES as _ROLES  # noqa: E402
+
+WHOLE_PROMPT = WHOLE_PROMPT.replace("<<NARRATIVE_ROLES>>", _ROLE_GUIDE).replace("<<NARRATIVE_ENUM>>", "|".join(_ROLES))
 
 SHOT_PROMPT = SHOT_PROMPT.replace("<<SHOT_ASPECTS>>", _aspect_block(video=False))
 WHOLE_PROMPT = WHOLE_PROMPT.replace("<<VIDEO_ASPECTS>>", _aspect_block(video=True))
