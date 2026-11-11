@@ -375,8 +375,8 @@ VI = dict(
     steps=[
         ("1", "Tách", "chia từng shot\ntách âm 3 lớp"),
         ("2", "Chứng cứ", "đo frame\nxem ảnh\nnghe âm"),
-        ("3", "Kết luận", "chứng cứng trước\nsoát mâu thuẫn"),
-        ("4", "Kế hoạch", "gom theo năng lực\nmodel mục tiêu"),
+        ("3", "Kết luận", "ưu tiên\nchứng cứ cứng\nsoát mâu thuẫn"),
+        ("4", "Kế hoạch", "gom theo\nnăng lực của\nmodel đích"),
     ],
     shots=["0:00–0:06", "0:06–0:11", "0:11–0:16", "0:16–0:21", "0:21–0:24"],
     sound_lanes=["giọng", "nhạc", "SFX"],
