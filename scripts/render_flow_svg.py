@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""生成 README 用的流程图 docs/rea-flow.svg（中文）和 docs/rea-flow_en.svg（英文）和 docs/rea-flow_ja.svg（日文），以及韩 / 俄 / 西 / 葡 / 法 / 德版 docs/rea-flow_{ko,ru,es,pt,fr,de}.svg。
+"""生成 README 用的流程图 docs/rea-flow.svg（中文）和 docs/rea-flow_en.svg（英文）和 docs/rea-flow_ja.svg（日文），以及韩 / 俄 / 西 / 葡 / 法 / 德 / 越版 docs/rea-flow_{ko,ru,es,pt,fr,de,vi}.svg。
 
 用法：python3 scripts/render_flow_svg.py [输出目录，默认 docs]
 
 画的是一个具体例子：一条带货视频切成 5 个镜头 + 声音，每列一个镜头，每行一步
-（切开 / 取证据 / 判断 / 复刻方案）。改文案改顶部的 ZH / EN / JA / KO / RU / ES / PT / FR / DE 字典即可。
+（切开 / 取证据 / 判断 / 复刻方案）。改文案改顶部的 ZH / EN / JA / KO / RU / ES / PT / FR / DE / VI 字典即可。
 """
 import sys
 from pathlib import Path
@@ -369,6 +369,46 @@ DE = dict(
     footer=("Bericht  report.html · breakdown.json", "Fazit in einem Satz · Remake-Plan nach drehen / generieren / coden · Stills, Belege, Prompts pro Shot · Untertitel SRT / ASS"),
 )
 
+VI = dict(
+    title="Ví dụ minh họa: 1 video bán hàng tách thành 5 shot và 3 lớp âm thanh, mỗi shot đi qua 4 bước",
+    subtitle="Đọc ngang để theo 1 shot từ bằng chứng đến kế hoạch remake; đọc dọc để so các shot ở từng bước",
+    steps=[
+        ("1", "Tách", "chia từng shot\ntách âm 3 lớp"),
+        ("2", "Chứng cứ", "đo frame\nxem ảnh\nnghe âm"),
+        ("3", "Kết luận", "chứng cứng trước\nsoát mâu thuẫn"),
+        ("4", "Kế hoạch", "gom theo năng lực\nmodel mục tiêu"),
+    ],
+    shots=["0:00–0:06", "0:06–0:11", "0:11–0:16", "0:16–0:21", "0:21–0:24"],
+    sound_lanes=["giọng", "nhạc", "SFX"],
+    sound_caption="toàn đoạn 0:00–0:24",
+    kinds={"m": "Đ", "l": "X", "h": "N"},
+    evidence=[
+        [("m", "60fps, không lặp"), ("m", "nhiễu cảm biến"), ("l", "tay, chữ rõ nét")],
+        [("m", "nền đứng yên"), ("m", "chỉ động cục bộ"), ("l", "UI app thật")],
+        [("m", "24fps, lặp khung"), ("m", "có nhãn AIGC"), ("l", "chữ trên hộp lỗi")],
+        [("m", "tool: giống 3D"), ("l", "VLM: giống AI"), ("l", "mâu thuẫn ⚠")],
+        [("m", "nền đứng yên"), ("m", "OCR ra text"), ("l", "không dấu quay")],
+        [("h", "nhịp âm 3–8Hz"), ("h", "122 BPM, Rê thứ"), ("h", "cắt khớp nhịp")],
+    ],
+    verdicts=[
+        ("live", "Quay thật", 0.96, None),
+        ("screen", "Quay màn hình", 0.93, None),
+        ("ai", "Video AI", 0.98, None),
+        ("ai", "Video AI", 0.88, "agent xem ảnh chốt"),
+        ("code", "Render code", 0.95, None),
+        ("sound", "Giọng thật + nhạc kho", 0.9, None),
+    ],
+    rule="Bằng chứng cứng (nhãn AIGC, nhịp lặp frame) thắng cảm giác \"trông giống\"; shot có nguồn mâu thuẫn sẽ được gắn cờ cho agent xem ảnh kiểm tra",
+    plans={
+        "s1": ("cam", ["Tự quay", "1 bối cảnh, 1 máy", "đèn + điện thoại"]),
+        "s2": ("screen", ["Ghi lại", "tư liệu thật", "không dùng AI tạo"]),
+        "s34": ("ai", ["Gộp 2 shot vào 1 lần tạo", "prompt đa shot + 2 ảnh SP + @bản_gốc", "gom theo model: tối đa 10 giây/lần,", "xuất đa shot, nhận 2 ảnh tham chiếu"]),
+        "s5": ("code", ["Viết code", "project Remotion", "chữ, bố cục, motion"]),
+        "snd": ("sound", ["Ba lớp âm", "giọng: thu hoặc TTS", "nhạc: kho, 122 BPM", "SFX: theo mốc giờ"]),
+    },
+    footer=("Báo cáo  report.html · breakdown.json", "kết luận 1 dòng · kế hoạch tách quay / tạo AI / code · ảnh từng shot, bằng chứng, prompt · phụ đề SRT / ASS"),
+)
+
 # ---------------------------------------------------------------- palette
 C = {
     "ink": "#0f172a", "mute": "#64748b", "line": "#cbd5e1", "band": "#f8fafc", "bg": "#ffffff",
@@ -690,6 +730,6 @@ if __name__ == "__main__":
     (out / "rea-flow.svg").write_text(build(ZH, "zh"), encoding="utf-8")
     (out / "rea-flow_en.svg").write_text(build(EN, "en"), encoding="utf-8")
     (out / "rea-flow_ja.svg").write_text(build(JA, "ja"), encoding="utf-8")
-    for lang, S in [("ko", KO), ("ru", RU), ("es", ES), ("pt", PT), ("fr", FR), ("de", DE)]:
+    for lang, S in [("ko", KO), ("ru", RU), ("es", ES), ("pt", PT), ("fr", FR), ("de", DE), ("vi", VI)]:
         (out / f"rea-flow_{lang}.svg").write_text(build(S, lang), encoding="utf-8")
     print("written", out)
