@@ -26,7 +26,7 @@ PREF_KEYS = {
     "env_file": "默认的 VLM 配置文件（等同每次加 --env-file）",
     "stems": "decompose 是否默认做人声/配乐分离：on / off",
     "reviewer": "apply-review 默认的复核者名字",
-    "ocr_lang": "字幕/花字 OCR 的语言：zh（中英，默认）/ ja（日文，首次使用自动下载约 10 MB 识别模型）",
+    "ocr_lang": "字幕/花字 OCR 的语言：zh（中英，默认）/ ja（日文）/ ko（韩文）；ja、ko 首次使用自动下载约 10 MB 识别模型",
     "capsule_root": "capsule-cinema 仓库位置（remake-plan / remake-run / capsule-draft 的 --capsule-root；也可设 $CAPSULE_CINEMA_ROOT）",
     "lang": "报告和结论的语言：zh（默认）/ en；agent 应按用户提问的语言选，用户明确指定时以指定为准",
 }

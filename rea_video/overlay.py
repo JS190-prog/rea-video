@@ -24,6 +24,9 @@ _REC_MODELS = {
     "ja": ("japan_PP-OCRv4_rec_mobile.onnx",
            "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv4/rec/japan_PP-OCRv4_rec_mobile.onnx",
            "e1075a67dba758ecfc7ebc78a10ae61c95ac8fb66a9c86fab5541e33f085cb7a"),
+    "ko": ("korean_PP-OCRv5_rec_mobile.onnx",
+           "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv5/rec/korean_PP-OCRv5_rec_mobile.onnx",
+           "cd6e2ea50f6943ca7271eb8c56a877a5a90720b7047fe9c41a2e541a25773c9b"),
 }
 _OCR: dict = {}  # language -> RapidOCR instance, or None when it could not be loaded
 

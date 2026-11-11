@@ -47,6 +47,18 @@ def test_ja_uses_japanese_recognizer(monkeypatch, tmp_path, fake_rapidocr):
     assert fake_rapidocr == [{"rec_model_path": str(model)}, {}]  # one instance per language
 
 
+def test_ko_uses_korean_recognizer(monkeypatch, tmp_path, fake_rapidocr):
+    monkeypatch.delenv("REA_OCR_REC_MODEL", raising=False)
+    monkeypatch.setenv("REA_VIDEO_MODELS", str(tmp_path))
+    name, _url, _sha = overlay._REC_MODELS["ko"]
+    assert name.startswith("korean_")
+    (tmp_path / name).write_bytes(b"model")
+    monkeypatch.setitem(overlay._REC_MODELS, "ko", (name, "http://invalid", overlay._sha256(tmp_path / name)))
+    monkeypatch.setenv("REA_OCR_LANG", "ko")
+    overlay.get_ocr()
+    assert fake_rapidocr == [{"rec_model_path": str(tmp_path / name)}]
+
+
 def test_cached_model_with_matching_checksum_is_not_downloaded(monkeypatch, tmp_path):
     monkeypatch.delenv("REA_OCR_REC_MODEL", raising=False)
     monkeypatch.setenv("REA_VIDEO_MODELS", str(tmp_path))

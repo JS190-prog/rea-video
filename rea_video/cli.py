@@ -431,7 +431,7 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--no-vlm", action="store_true", help="本次不开 VLM（覆盖 prefs 里的 vlm=on）")
     d.add_argument("--no-whole", action="store_true", help="跳过整片结构/文案 VLM 分析")
     d.add_argument("--no-ocr", action="store_true", help="不做 OCR（字幕/花字时间轴也会跳过，只剩贴纸检测）")
-    d.add_argument("--ocr-lang", choices=OCR_LANGS, help="字幕/花字的语言：zh 中英（默认）、ja 日文（首次使用自动下载识别模型）；也可用 prefs ocr_lang 设成默认")
+    d.add_argument("--ocr-lang", choices=OCR_LANGS, help="字幕/花字的语言：zh 中英（默认）、ja 日文、ko 韩文（首次使用自动下载识别模型）；也可用 prefs ocr_lang 设成默认")
     d.add_argument("--no-packaging", action="store_true", help="跳过剪辑包装层（整片字幕时间轴、花字、贴纸/动图、音效卡点）；省掉约每分钟 30–50 秒")
     d.add_argument("--lang", choices=LANGS, help="报告、结论和 VLM 描述的语言：zh（默认）/ en；按用户提问的语言选，也可用 prefs lang 设成默认")
     d.add_argument("--workers", type=int, default=3)
