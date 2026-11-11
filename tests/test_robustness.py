@@ -133,3 +133,118 @@ def test_variable_frame_rate_cuts_use_real_timestamps(tmp_path):
     shots = detect_shots(build_track(str(vfr), video_info(vfr)))
     assert [round(s.start, 2) for s in shots] == [0.0, 2.0, 4.0]
     assert abs(shots[-1].end - 6.0) < 0.05
+
+
+def _tagged(tmp_path, **tags) -> Path:
+    p = tmp_path / "t.mp4"
+    meta = [x for k, v in tags.items() for x in ("-metadata", f"{k}={v}")]
+    _ff("-f", "lavfi", "-i", "testsrc2=size=64x64:rate=5", "-t", "1", *meta, str(p))
+    return p
+
+
+def test_generator_named_in_typed_text_is_not_a_signature(tmp_path):
+    p = _tagged(tmp_path, title="pikachu on the runway", description="Each individual clip compared with OpenAI Sora", comment="unresolved")
+    prov = provenance(video_info(p))
+    assert not prov["hints"].get("generator") and "DaVinci Resolve" not in prov["hints"].get("editor", [])
+    assert any(e["kind"] == "generator_text" for e in prov["evidence"])
+
+
+def test_generator_named_by_the_encoder_is_a_signature(tmp_path):
+    p = tmp_path / "t.mp4"
+    _ff("-f", "lavfi", "-i", "testsrc2=size=64x64:rate=5", "-t", "1", "-metadata:s:v", "handler_name=KlingAI video", str(p))
+    assert "Kling" in provenance(video_info(p))["hints"].get("generator", [])
+
+
+def test_shot_decode_starts_on_the_shot_first_frame(tmp_path):
+    import numpy as np
+
+    from rea_video.media import iter_frames
+
+    p = tmp_path / "ramp.mp4"  # every frame is a flat grey of its own level, so the level read back names the frame
+    _ff("-f", "lavfi", "-i", "color=black:size=64x64:rate=30000/1001,geq=lum='16+4*N':cb=128:cr=128", "-t", "2", "-pix_fmt", "yuv420p", str(p))
+    info = video_info(p)
+    level = [round(float(np.mean(f))) for f in iter_frames(p, info, width=64, gray=True)]
+    assert len(set(level[:50])) == 50
+    for k in range(1, 50):  # a third of these start times round to just past the frame's timestamp
+        first = next(iter_frames(p, info, width=64, start=k / info.fps, duration=0.2, gray=True))
+        assert level.index(round(float(np.mean(first)))) == k, k
+
+
+def test_normalize_shot_result_coerces_text_fields():
+    r = normalize_shot_result({"label_probs": {"ai_video": 1}, "description": ["a cat", "jumps"], "style": None, "embedded_assets": "logo",
+                               "ai_edits": [{"kind": "face_swap"}, "x"], "overlay_text": "SALE", "replication": {"video_prompt": ["a", "b"]},
+                               "aspects": "n/a"})
+    assert isinstance(r["description"], str) and "a cat" in r["description"] and r["style"] == ""
+    assert r["embedded_assets"] == [] and r["ai_edits"] == [{"kind": "face_swap"}] and r["overlay_text"] == ["SALE"]
+    assert isinstance(r["replication"]["video_prompt"], str) and "aspects" not in r
+
+
+def _http_error(code, body=b'{"error": "video input is not supported"}', headers=None):
+    import io
+    import urllib.error
+
+    return urllib.error.HTTPError("https://example.invalid/v1", code, "err", headers or {}, io.BytesIO(body))
+
+
+def test_rejected_request_is_not_retried_and_does_not_stop_the_vlm(monkeypatch):
+    c = VLMClient(VLMConfig("https://example.invalid/v1", "k", ["m1"]))
+    calls = []
+
+    def fake_urlopen(req, timeout):
+        calls.append(1)
+        raise _http_error(400)
+
+    monkeypatch.setattr("rea_video.vlm.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("rea_video.vlm.time.sleep", lambda s: None)
+    for _ in range(3):
+        with pytest.raises(RuntimeError, match="not supported"):
+            c.ask_json("p", [])
+    assert len(calls) == 3 and not c.gave_up
+
+
+def test_server_errors_still_stop_the_vlm(monkeypatch):
+    c = VLMClient(VLMConfig("https://example.invalid/v1", "k", ["m1"]))
+    monkeypatch.setattr("rea_video.vlm.urllib.request.urlopen", lambda req, timeout: (_ for _ in ()).throw(_http_error(503)))
+    monkeypatch.setattr("rea_video.vlm.time.sleep", lambda s: None)
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            c.ask_json("p", [])
+    assert c.gave_up
+
+
+def test_truncated_cache_file_is_asked_again(tmp_path, monkeypatch):
+    import io
+    import json
+
+    c = VLMClient(VLMConfig("https://example.invalid/v1", "k", ["m1"]), tmp_path)
+
+    class R(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("rea_video.vlm.urllib.request.urlopen",
+                        lambda req, timeout: R(json.dumps({"choices": [{"message": {"content": '{"ok": 1}'}}]}).encode()))
+    assert c.ask_json("p", [])["ok"] == 1
+    (cached,) = tmp_path.glob("*.json")
+    cached.write_text('{"ok": ', encoding="utf-8")
+    assert c.ask_json("p", [])["ok"] == 1
+    assert json.loads(cached.read_text(encoding="utf-8"))["ok"] == 1 and not list(tmp_path.glob("*.part"))
+
+
+def test_failed_clip_is_one_line_not_a_traceback(tmp_path):
+    from rea_video.media import MediaError, cut_clip
+
+    with pytest.raises(MediaError):
+        cut_clip(tmp_path / "missing.mp4", 0, 1, tmp_path / "c.mp4")
+
+
+def test_vlm_note_says_when_shots_were_left_out():
+    from rea_video.i18n import set_lang
+    from rea_video.vlm import vlm_note
+
+    set_lang("zh")
+    assert "60/200" in vlm_note({"status": "ok", "model": "m", "asked_shots": 60, "total_shots": 200})
+    assert "/" not in vlm_note({"status": "ok", "model": "m", "asked_shots": 5, "total_shots": 5})

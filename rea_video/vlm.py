@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -80,13 +81,17 @@ def _vlm_note(info: dict) -> str:
     from .i18n import T
 
     status = info.get("status") or ("ok" if info.get("used") else "off")
+    asked, total = info.get("asked_shots", 0), info.get("total_shots", 0)
+    # more shots than the call cap: the rest never went to the VLM, which "active" alone would hide
+    capped = T("；只送了 {a}/{n} 个镜头，其余只靠确定性取证（--max-vlm-shots 可调）",
+               "; only {a}/{n} shots were sent, the rest rely on deterministic forensics (raise --max-vlm-shots)", a=asked, n=total) if 0 < asked < total else ""
     if status == "ok":
-        return T("VLM 已生效（{m}）", "VLM active ({m})", m=info.get("model", ""))
+        return T("VLM 已生效（{m}）", "VLM active ({m})", m=info.get("model", "")) + capped
     if status == "partial":
         return T("VLM 部分生效（{m}：{ok}/{asked} 个镜头有结果，整片分析{w}）；失败的镜头只靠确定性取证",
                  "VLM partly active ({m}: {ok}/{asked} shots answered, whole-video pass {w}); failed shots rely on deterministic forensics only",
                  m=info.get("model", ""), ok=info.get("ok_shots", 0), asked=info.get("asked_shots", 0),
-                 w=(T("有", "succeeded") if info.get("whole_ok") else T("失败", "failed")))
+                 w=(T("有", "succeeded") if info.get("whole_ok") else T("失败", "failed"))) + capped
     limited = T("实拍/AI/3D 的区分只靠像素统计，可信度有限", "live action / AI / 3D are told apart from pixel statistics only, so confidence is limited")
     if status == "failed":
         err = (info.get("errors") or [""])[0]
@@ -118,6 +123,7 @@ def parse_json(text: str) -> dict:
 class VLMClient:
     # after this many requests in a row fail on every model, stop calling the service for this run
     MAX_DEAD_REQUESTS = 2
+    REQUEST_ERRORS = (400, 413, 415, 422)  # the endpoint rejects this request's content, not the service being down
 
     def __init__(self, cfg: VLMConfig, cache_dir: Path | None = None):
         self.cfg = cfg
@@ -164,13 +170,20 @@ class VLMClient:
             h.update(mime.encode())
             h.update(hashlib.sha1(p.read_bytes()).digest())
         key = h.hexdigest()
-        if self.cache_dir and (self.cache_dir / f"{key}.json").is_file():
-            return json.loads((self.cache_dir / f"{key}.json").read_text(encoding="utf-8"))
+        cached = self.cache_dir / f"{key}.json" if self.cache_dir else None
+        if cached and cached.is_file():
+            try:
+                got = json.loads(cached.read_text(encoding="utf-8"))
+                if isinstance(got, dict):
+                    return got
+            except (OSError, ValueError):
+                pass  # a half-written file from an interrupted run: ask again
         if self.gave_up:
             raise RuntimeError("VLM skipped: service failed on every model for earlier requests")
         content = [{"type": "image_url", "image_url": {"url": _data_uri(p, mime)}} for p, mime in media]
         content.append({"type": "text", "text": prompt})
         last: Exception | None = None
+        refused = False
         for model in list(self.models):
             for attempt in range(2):
                 try:
@@ -179,20 +192,45 @@ class VLMClient:
                     out = parse_json(text)
                     out["_model"] = model
                     out["_seconds"] = round(time.time() - t, 1)
-                    if self.cache_dir:
-                        (self.cache_dir / f"{key}.json").write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-                    self.dead_requests = 0
+                    if cached:
+                        tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{threading.get_ident()}.part")
+                        tmp.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+                        tmp.replace(cached)
                     with self._lock:  # shots run in a thread pool
+                        self.dead_requests = 0
                         if model in self.models and self.models[0] != model:
                             self.models.remove(model)
                             self.models.insert(0, model)
                     return out
-                except (urllib.error.URLError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
+                except urllib.error.HTTPError as exc:
+                    try:
+                        why = exc.read()[:300].decode(errors="ignore").strip()
+                    except Exception:
+                        why = ""
+                    last = RuntimeError(f"HTTP {exc.code} {exc.reason}: {why}" if why else f"HTTP {exc.code} {exc.reason}")
+                    LOG.warning("VLM %s attempt %d failed: %s", model, attempt + 1, str(last)[:200])
+                    if exc.code in self.REQUEST_ERRORS:
+                        # this request is what the endpoint refuses (too large, video not accepted): the same
+                        # bytes will not pass a second time, and other shots are not affected
+                        refused = True
+                        break
+                    if exc.code == 429:
+                        try:
+                            wait = float(exc.headers.get("Retry-After") or 5)
+                        except (TypeError, ValueError):
+                            wait = 5.0
+                        time.sleep(min(max(wait, 1.0), 30.0))
+                    elif 400 <= exc.code < 500 and exc.code != 408:
+                        break  # bad key, unknown model: retrying this model changes nothing, the next one may answer
+                    else:
+                        time.sleep(1.5)
+                except (OSError, http.client.HTTPException, ValueError, KeyError) as exc:
                     last = exc
                     LOG.warning("VLM %s attempt %d failed: %s", model, attempt + 1, str(exc)[:200])
                     time.sleep(1.5)
-        if not isinstance(last, (ValueError, KeyError)):  # transport/server errors, not a bad answer
-            self.dead_requests += 1
+        if not refused and not isinstance(last, (ValueError, KeyError)):  # transport/server errors, not a bad answer
+            with self._lock:
+                self.dead_requests += 1
         raise RuntimeError(f"all VLM models failed: {last}")
 
 
@@ -416,7 +454,36 @@ def normalize_shot_result(raw: dict) -> dict:
             clean[k] = 0.0
     total = sum(clean.values()) or 1.0
     raw["label_probs"] = {k: v / total for k, v in clean.items()}
+    # the answer is cached, so a wrong type here would break the report on every later run, not only this one
+    for k in _SHOT_TEXT:
+        if k in raw and not isinstance(raw[k], str):
+            raw[k] = _text(raw[k])
+    for k in ("embedded_assets", "ai_edits", "segments"):
+        if k in raw:
+            raw[k] = [e for e in raw[k] if isinstance(e, dict)] if isinstance(raw[k], list) else []
+    if "overlay_text" in raw:
+        v = raw["overlay_text"]
+        raw["overlay_text"] = [_text(e) for e in (v if isinstance(v, list) else [v]) if e not in (None, "", [], {})]
+    for k in ("aspects", "replication"):
+        if k in raw and not isinstance(raw[k], dict):
+            del raw[k]
+    if "replication" in raw:
+        raw["replication"] = {k: v if isinstance(v, str) else _text(v) for k, v in raw["replication"].items()}
     return raw
+
+
+_SHOT_TEXT = ("description", "style", "generator_guess", "image_source", "shot_size", "camera_move", "material_origin")
+
+
+def _text(v) -> str:
+    """A model's stray list / number / null where a sentence was asked for, as one string."""
+    if v is None:
+        return ""
+    if isinstance(v, (list, tuple)):
+        return "；".join(_text(e) for e in v if e not in (None, ""))
+    if isinstance(v, dict):
+        return json.dumps(v, ensure_ascii=False)
+    return str(v)
 
 
 def prompt_lang_note() -> str:

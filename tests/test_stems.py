@@ -20,7 +20,7 @@ def test_ensure_model_rejects_partial_download_and_leaves_no_temp(tmp_path, monk
     import pytest
 
     monkeypatch.setenv("REA_VIDEO_MODELS", str(tmp_path))
-    monkeypatch.setattr(S.urllib.request, "urlretrieve", lambda url, dst: open(dst, "wb").write(b"x" * 10))
+    monkeypatch.setattr(S, "fetch", lambda url, dst: open(dst, "wb").write(b"x" * 10))
     with pytest.raises(OSError):
         S.ensure_model()
     assert list(tmp_path.iterdir()) == []
@@ -36,7 +36,7 @@ def test_ensure_model_uses_unique_temp_names(tmp_path, monkeypatch):
         with open(dst, "wb") as f:
             f.write(b"model")
 
-    monkeypatch.setattr(S.urllib.request, "urlretrieve", fake)
+    monkeypatch.setattr(S, "fetch", fake)
     S.ensure_model(force=True)
     S.ensure_model(force=True)
     assert len(set(seen)) == 2 and (tmp_path / S.MODEL_NAME).read_bytes() == b"model"

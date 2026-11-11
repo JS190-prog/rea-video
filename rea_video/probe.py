@@ -22,7 +22,7 @@ SIGNATURES: list[tuple[str, str, str]] = [
     (r"\bveo\b|google.*(deepmind|veo)|synthid", "generator", "Google Veo"),
     (r"\bsora\b|openai", "generator", "OpenAI Sora"),
     (r"runway|gen-?4", "generator", "Runway"),
-    (r"pika", "generator", "Pika"),
+    (r"pika(?:[ ._-]?(?:labs|art|ai))?(?![a-z])", "generator", "Pika"),
     (r"vidu|shengshu|生数", "generator", "Vidu"),
     (r"pixverse", "generator", "PixVerse"),
     (r"luma|dream ?machine", "generator", "Luma"),
@@ -50,6 +50,10 @@ SIGNATURES: list[tuple[str, str, str]] = [
 CAMERA_KEYS = ("com.apple.quicktime.make", "com.apple.quicktime.model", "make", "model", "com.android.manufacturer",
                "com.android.model", "location", "com.apple.quicktime.location.iso6709")
 AIGC_KEYS = ("aigc", "ai_generated", "aigc_label", "contentproducer", "produceid")
+
+
+FREE_TEXT_KEYS = {"title", "description", "comment", "synopsis", "summary", "lyrics", "keywords", "subject", "purl",
+                  "artist", "album", "album_artist", "show", "episode_id", "genre", "copyright"}
 
 
 def _flatten_tags(raw: dict) -> dict[str, str]:
@@ -152,13 +156,22 @@ def provenance(info: VideoInfo) -> dict:
             if aigc.get("label") == "1":
                 hints["generator"].append(T("AIGC 标识（{m}）", "AIGC label ({m})", m=aigc.get('meaning')))
 
-    blob = " ".join(f"{k}={v}" for k, v in tags.items() if "aigc" not in k.lower())
+    # tags a tool writes about itself (encoder, handler, software ...) versus text a person typed (title,
+    # description, comment ...): a generator named in typed text is what the video is about, not how it was made
+    typed = {k for k in tags if k.lower().split(".", 1)[-1] in FREE_TEXT_KEYS}
+    blob = " ".join(f"{k}={v}" for k, v in tags.items() if "aigc" not in k.lower() and k not in typed)
+    prose = " ".join(tags[k] for k in typed if "aigc" not in k.lower())
     raw_bytes = _scan_bytes(path)
     strings = _printable_strings(raw_bytes)
     for pattern, cat, label in SIGNATURES:
-        if re.search(pattern, blob, re.I):
+        # a name must start a word: "vidu" is not in "individual", "resolve" not in "unresolved"
+        starts = rf"(?<![a-z0-9])(?:{pattern})"
+        if re.search(starts, blob, re.I) or (cat != "generator" and re.search(starts, prose, re.I)):
             hints[cat].append(label)
             evidence.append({"kind": f"{cat}_signature", "detail": T("元数据包含 {l}", "Metadata contains {l}", l=label), "weight": "medium"})
+        elif cat == "generator" and re.search(starts, prose, re.I):
+            # shown in the report only: it moves no score and does not pair with a C2PA manifest
+            evidence.append({"kind": "generator_text", "detail": T("标题/描述里提到 {l}", "Title / description mentions {l}", l=label), "weight": "weak"})
         elif cat in ("generator", "renderer", "editor") and re.search(rf"\b(?:{pattern})\b", strings, re.I):
             # weaker: readable string inside container boxes (udta/uuid/xmp); a generator name here is only a hint
             # for the report, it does not move the score (short names like "veo" also occur by chance)

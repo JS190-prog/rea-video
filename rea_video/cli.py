@@ -61,7 +61,7 @@ def cmd_decompose(args) -> int:
         raise SystemExit(f"错误：不支持的报告语言 {lang}（可选：{', '.join(LANGS)}）")
     b = decompose(args.video, out, use_vlm=use_vlm, whole_vlm=not args.no_whole, ocr=not args.no_ocr,
                   workers=args.workers, engine=args.engine or pref("engine", "seedance2.0"), platform_meta=meta, stems=stems,
-                  packaging=not args.no_packaging, lang=lang)
+                  packaging=not args.no_packaging, lang=lang, max_shots_vlm=max(1, args.max_vlm_shots))
     print(json.dumps({"out": str(out), "verdict": b["summary"]["verdict"], "shots": b["summary"]["shots"],
                       "confidence": b["summary"]["confidence"], "vlm": b["summary"]["vlm"],
                       "report": str(out / "report.html")}, ensure_ascii=False, indent=2))
@@ -425,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--no-packaging", action="store_true", help="跳过剪辑包装层（整片字幕时间轴、花字、贴纸/动图、音效卡点）；省掉约每分钟 30–50 秒")
     d.add_argument("--lang", choices=LANGS, help="报告、结论和 VLM 描述的语言：zh（默认）/ en；按用户提问的语言选，也可用 prefs lang 设成默认")
     d.add_argument("--workers", type=int, default=3)
+    d.add_argument("--max-vlm-shots", type=int, default=60, help="最多发给 VLM 的调用数（默认 60；镜头更多时优先看最拿不准的，其余只靠确定性取证）")
     d.add_argument("--engine", help="复刻计划使用的 capsule-cinema 视频引擎（默认 prefs 里的 engine，否则 seedance2.0）")
     d.add_argument("--meta", help='平台元数据 JSON，例如 {"music": {"title": "xx", "author": "yy", "is_original": false, "popular": true}}')
     d.add_argument("--no-stems", action="store_true", help="不做人声/配乐分离（默认会输出 stems/original.wav、vocals.wav、music.wav）")

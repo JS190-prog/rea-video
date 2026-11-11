@@ -187,7 +187,8 @@ def iter_frames(
     vf.append(f"scale={w}:{h}:flags=area")
     cmd = ["ffmpeg", "-v", "error", "-nostdin"]
     if start is not None and start > 0:
-        cmd += ["-ss", f"{start:.4f}"]
+        # half a frame early: a start rounded to just past a frame's timestamp would drop that frame
+        cmd += ["-ss", f"{max(start - 0.5 / info.fps, 0.0) if info.fps > 0 else start:.4f}"]
     cmd += ["-i", str(path)]
     if duration is not None:
         cmd += ["-t", f"{max(duration, 0.01):.4f}"]
@@ -214,6 +215,11 @@ def iter_frames(
             err = errf.read()[-4000:].decode(errors="ignore")
             if err.strip():
                 raise MediaError(f"ffmpeg decoded no frames: {err.strip()[:300]}")
+        elif proc.wait() != 0:
+            # the stream ended early (a damaged file): what was read is analysed, but say that it is not all of it
+            errf.seek(0)
+            err = errf.read()[-4000:].decode(errors="ignore").strip()
+            LOG.warning("ffmpeg stopped after %d frames of %s: %s", count, Path(path).name, err[:300] or f"exit {proc.returncode}")
     finally:
         proc.stdout.close()
         proc.kill()
@@ -230,8 +236,14 @@ def extract_frame(path: str | Path, t: float, out_path: str | Path, width: int |
     if subprocess.run(cmd, capture_output=True).returncode != 0 or not out_path.is_file():
         # t past the last frame's timestamp (low fps, last shot): take the file's last frame instead
         cmd = ["ffmpeg", "-v", "error", "-y", "-sseof", "-3", "-i", str(path), "-update", "1", *vf, "-q:v", "2", str(out_path)]
-        subprocess.run(cmd, check=True, capture_output=True)
+        _run_ffmpeg(cmd, f"frame at {t:.2f}s")
     return out_path
+
+
+def _run_ffmpeg(cmd: list[str], what: str) -> None:
+    got = subprocess.run(cmd, capture_output=True)
+    if got.returncode != 0:
+        raise MediaError(f"ffmpeg failed ({what}): {got.stderr.decode(errors='ignore').strip()[-300:] or got.returncode}")
 
 
 def cut_clip(path: str | Path, start: float, duration: float, out_path: str | Path, width: int = 480,
@@ -239,10 +251,10 @@ def cut_clip(path: str | Path, start: float, duration: float, out_path: str | Pa
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-v", "error", "-y", "-ss", f"{max(start, 0):.4f}", "-i", str(path), "-t", f"{duration:.4f}",
-           "-vf", f"scale={width}:-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf), "-pix_fmt", "yuv420p"]
+           "-vf", f"scale='min({width},iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf), "-pix_fmt", "yuv420p"]
     cmd += ["-c:a", "aac", "-b:a", "64k"] if audio else ["-an"]
     cmd += ["-movflags", "+faststart", str(out_path)]
-    subprocess.run(cmd, check=True)
+    _run_ffmpeg(cmd, f"clip {start:.2f}s +{duration:.2f}s")
     return out_path
 
 

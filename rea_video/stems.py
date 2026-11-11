@@ -9,13 +9,12 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-import urllib.request
 import uuid
 from pathlib import Path
 
 import numpy as np
 
-from .util import sha256_file
+from .util import fetch, sha256_file
 
 LOG = logging.getLogger(__name__)
 SR = 44100
@@ -45,7 +44,7 @@ def ensure_model(force: bool = False) -> Path:
     # per-process temp name: several decompose runs may download at the same time
     tmp = p.with_name(f"{p.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.part")
     try:
-        urllib.request.urlretrieve(MODEL_URL, tmp)
+        fetch(MODEL_URL, tmp)
         if sha256_file(tmp) != MODEL_SHA256:
             raise OSError(f"checksum mismatch for {MODEL_NAME} ({tmp.stat().st_size} bytes); delete it and retry")
         tmp.replace(p)  # atomic: readers see the old file or the complete new one

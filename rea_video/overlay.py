@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import hashlib
 import os
-import urllib.request
 import uuid
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from .util import LOG, OCR_LANGS
+from .util import LOG, OCR_LANGS, fetch
 
 # Recognition models for languages other than the bundled Chinese/English one. Detection stays the bundled
 # model, which finds Japanese text lines fine; only the recognizer's character set has to change. The ONNX
@@ -61,7 +60,7 @@ def rec_model(lang: str) -> Path:
     LOG.info("downloading OCR model %s -> %s", name, p)
     tmp = p.with_name(f"{p.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.part")
     try:
-        urllib.request.urlretrieve(url, tmp)
+        fetch(url, tmp)
         if _sha256(tmp) != sha:
             raise OSError(f"checksum mismatch for {name}")
         tmp.replace(p)

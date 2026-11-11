@@ -525,8 +525,8 @@ def merge_audio_with_vlm(audio: dict, whole: dict | None) -> dict:
     music = audio.get("music", {})
     plan = []
     if voice.get("present") or n.get("type") in ("tts", "human", "mixed"):
-        plan.append({"track": "voice", "rule": "A01-narration" if n.get("type") != "human" else "A01-narration",
-                     "what": (T("TTS 旁白", "TTS voice-over") if n.get('type') == 'tts' else (T("真人口播/对白", "human talking head / dialogue") if n.get('type') == 'human' else T("人声", "voice"))
+        plan.append({"track": "voice", "rule": "A01-narration",
+                     "what": ((T("TTS 旁白", "TTS voice-over") if n.get('type') == 'tts' else T("真人口播/对白", "human talking head / dialogue") if n.get('type') == 'human' else T("人声", "voice"))
                              + f"{T('，', ', ')}{n.get('voice') or voice.get('gender_hint') or ''}{T('，', ', ')}{n.get('style') or ''}").strip(T("，", ", ")),
                      "how": T("capsule-cinema DoubaoTTSTool / UniversalTTSTool（或 MiniMax 克隆音色）；需要卡原时间窗时用时长可控 TTS",
                               "capsule-cinema DoubaoTTSTool / UniversalTTSTool (or a MiniMax cloned voice); use duration-controlled TTS when it must fit the original time window"),

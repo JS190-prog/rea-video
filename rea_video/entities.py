@@ -110,7 +110,10 @@ def open_questions(b: dict) -> list[str]:
     """What a reader should verify by eye / ear, collected from every part of the breakdown. Ordered: picture, material, audio, packaging."""
     q: list[str] = []
     s = b.get("summary") or {}
-    if s.get("vlm") and any(k in str(s["vlm"]) for k in ("失败", "未配置", "未开", "failed", "not configured", "off")):
+    vlm = (b.get("analysis") or {}).get("vlm") or {}
+    status = vlm.get("status") or ("ok" if vlm.get("used") else "off")
+    reviewed = ((b.get("analysis") or {}).get("review") or {}).get("shots")
+    if s.get("vlm") and status in ("off", "not_configured", "failed") and not reviewed:
         q.append(T("VLM 没有生效（{v}）：实拍 / AI / 3D 的区分只靠信号取证，建议配置多模态模型后加 --vlm 重跑，或由 agent 看图复核",
                    "The VLM did not run ({v}): live action / AI / 3D is decided by signal forensics alone; configure a multimodal model and rerun with --vlm, or have an agent review the frames", v=s["vlm"]))
     for r in b.get("shots", []):
@@ -127,6 +130,11 @@ def open_questions(b: dict) -> list[str]:
         unsure = sorted({it.get("kind_zh", "") for it in (r.get("material") or {}).get("items", []) if it.get("real_material") is None})
         if unsure:
             q.append(tag + T("：{k} 是真实素材还是生成的，待确认", ": {k}: real material or generated, to confirm", k=join(unsure)))
+    if (b.get("audio") or {}).get("has_audio") and not vlm.get("whole_ok"):
+        # an image review covers the picture; the soundtrack is only heard by a model that takes video
+        q.append(T("声音没有模型听过{r}：旁白是 TTS 还是真人、音效清单只来自信号检测，人声和音乐下面的轻音效可能漏检。请听 stems/ 里的干声和配乐核对，或配置能读视频的 VLM 后加 --vlm 重跑",
+                   "No model listened to the soundtrack{r}: TTS versus human narration and the sound-effect list come from signal detection alone, and quiet effects under voice and music may be missed. Listen to the stems/ files to check, or configure a VLM that reads video and rerun with --vlm",
+                   r=T("（看图复核只看画面）", " (the image review covers the picture only)") if reviewed else ""))
     src = b.get("sound_sources") or {}
     for k, name in (("music", T("背景音乐", "music")), ("voice", T("人声", "voice"))):
         v = src.get(k) or {}

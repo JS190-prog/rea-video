@@ -68,6 +68,15 @@ def _json_default(value: Any) -> Any:
     return str(value)
 
 
+def fetch(url: str, dest: Path, timeout: float = 60.0) -> None:
+    """Download url to dest. The timeout is per read, so a stalled connection raises instead of hanging the run."""
+    import shutil
+    import urllib.request
+
+    with urllib.request.urlopen(url, timeout=timeout) as resp, open(dest, "wb") as f:
+        shutil.copyfileobj(resp, f, 1 << 20)
+
+
 def sha256_file(path: Path) -> str:
     import hashlib
 

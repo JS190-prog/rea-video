@@ -145,3 +145,19 @@ def test_open_questions_collects_everything(breakdown):
     b["sound_sources"] = {"music": {"source": "unknown", "source_zh": "来源待确认", "probs": {"a": 0.5, "b": 0.5}, "how_to_confirm": ["听歌识曲"]}}
     qs = open_questions(b)
     assert any("工具判 A" in q for q in qs) and any("#2" in q and "40%" in q for q in qs) and any("听歌识曲" in q for q in qs)
+
+
+def test_open_questions_say_when_nobody_heard_the_sound(breakdown):
+    b, _ = breakdown
+    set_lang("zh")
+    b = json.loads(json.dumps(b))
+    b["audio"] = dict(b.get("audio") or {}, has_audio=True)
+    b["analysis"]["vlm"] = {"status": "off", "used": False}
+    b["analysis"]["review"] = {"shots": 3, "of": 3, "by": "agent"}
+    qs = open_questions(b)
+    assert any("声音没有模型听过" in q and "看图复核只看画面" in q for q in qs) and not any("VLM 没有生效" in q for q in qs)
+    b["analysis"]["vlm"] = {"status": "ok", "used": True, "whole_ok": True}
+    assert not any("声音没有模型听过" in q for q in open_questions(b))
+    b["audio"]["has_audio"] = False
+    b["analysis"]["vlm"] = {"status": "off", "used": False}
+    assert not any("声音没有模型听过" in q for q in open_questions(b))

@@ -53,7 +53,7 @@ def test_cached_model_with_matching_checksum_is_not_downloaded(monkeypatch, tmp_
     name, _url, _sha = overlay._REC_MODELS["ja"]
     (tmp_path / name).write_bytes(b"model")
     monkeypatch.setitem(overlay._REC_MODELS, "ja", (name, "http://invalid", overlay._sha256(tmp_path / name)))
-    monkeypatch.setattr(overlay.urllib.request, "urlretrieve", lambda *a: pytest.fail("should not download"))
+    monkeypatch.setattr(overlay, "fetch", lambda *a: pytest.fail("should not download"))
     assert overlay.rec_model("ja") == tmp_path / name
 
 

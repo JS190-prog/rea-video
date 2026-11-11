@@ -6,14 +6,13 @@ from __future__ import annotations
 
 import logging
 import os
-import urllib.request
 import uuid
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from .util import sha256_file
+from .util import fetch, sha256_file
 
 LOG = logging.getLogger(__name__)
 MODEL_NAME = "face_detection_yunet_2023mar.onnx"
@@ -37,7 +36,7 @@ def _ensure_model() -> Path | None:
     tmp = p.with_name(f"{p.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.part")
     try:
         LOG.info("downloading face model %s -> %s", MODEL_NAME, p)
-        urllib.request.urlretrieve(MODEL_URL, tmp)
+        fetch(MODEL_URL, tmp)
         if sha256_file(tmp) != MODEL_SHA256:
             raise OSError("checksum mismatch")
         tmp.replace(p)

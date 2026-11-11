@@ -63,7 +63,7 @@ def test_face_model_checksum_rejects_tampered_download(tmp_path, monkeypatch):
     from rea_video import faces
 
     monkeypatch.setenv("REA_VIDEO_MODELS", str(tmp_path))
-    monkeypatch.setattr(faces.urllib.request, "urlretrieve", lambda url, dst: open(dst, "wb").write(b"evil"))
+    monkeypatch.setattr(faces, "fetch", lambda url, dst: open(dst, "wb").write(b"evil"))
     assert faces._ensure_model() is None
     assert list(tmp_path.iterdir()) == []
 

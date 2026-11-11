@@ -216,9 +216,6 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
                 first, last = unit[0], unit[-1]
                 span = last["end"] - first["start"]
                 media = []
-                if cfg.media in ("both", "video"):
-                    clip = cut_clip(video, first["start"], min(span, 12.0), out / "clips" / f"{first['id']}.mp4", width=480)
-                    media.append((clip, "video/mp4"))
                 if cfg.media in ("both", "frames"):
                     mid = unit[len(unit) // 2]
                     media += [(out / first["assets"]["first_frame"], "image/jpeg"), (out / mid["assets"]["sheet"], "image/jpeg"),
@@ -231,6 +228,9 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
                 prompt += prompt_lang_note()
                 fallback = None
                 try:
+                    if cfg.media in ("both", "video"):  # a clip that fails to encode costs this unit its video, not the run
+                        clip = cut_clip(video, first["start"], min(span, 12.0), out / "clips" / f"{first['id']}.mp4", width=480)
+                        media.insert(0, (clip, "video/mp4"))
                     raw = client.ask_json(prompt, media)
                 except Exception as exc:  # keep going; deterministic result stands
                     raw = None
@@ -263,7 +263,7 @@ def decompose(video: str | Path, out_dir: str | Path, *, use_vlm: bool = False, 
                     vlm_info["errors"].append(f"whole: {str(exc)[:160]}")
             asked = [r for u in units for r in u]
             ok_shots = sum(1 for r in asked if r.get("vlm"))
-            vlm_info.update(ok_shots=ok_shots, asked_shots=len(asked), calls=len(units), whole_ok=whole is not None)
+            vlm_info.update(ok_shots=ok_shots, asked_shots=len(asked), total_shots=len(shot_records), calls=len(units), whole_ok=whole is not None)
             if ok_shots == len(asked) and (whole is not None or not whole_vlm):
                 vlm_info.update(used=True, status="ok")
             elif ok_shots or whole is not None:
