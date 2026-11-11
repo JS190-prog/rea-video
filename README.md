@@ -171,7 +171,7 @@ The Holdout column shows two numbers: holdout (9 videos) and holdout2 (7 videos)
 
 On original files, the tools alone are usually enough. Videos downloaded from platforms have been recompressed, which wipes out the noise evidence, so you need a visual check to get back above 99%.
 
-Real-asset detection is 97–99%, and shot boundaries are all correct. Numbers and how to reproduce them: [eval/RESULTS.md](eval/RESULTS.md).
+Real-asset detection is 97–99%; on nine hand-labelled clips, shot boundaries reach 95% recall and 94% precision. Numbers and how to reproduce them: [eval/RESULTS.md](eval/RESULTS.md).
 
 ## How it works
 

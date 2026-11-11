@@ -171,7 +171,7 @@ Os dois números do holdout correspondem ao holdout (9 vídeos) e ao holdout2 (7
 
 Com os arquivos originais, as ferramentas sozinhas quase sempre dão conta. Vídeos baixados de plataformas passaram por recompressão, que apaga a evidência de ruído, então é preciso uma checagem visual para voltar a passar dos 99%.
 
-A detecção de material real fica entre 97% e 99%, e os limites dos planos saem todos certos. Os números e como reproduzir: [eval/RESULTS.md](../eval/RESULTS.md).
+A detecção de material real fica entre 97% e 99%; em nove clipes anotados à mão, os limites dos planos são detectados com 95% de recall e 94% de precisão. Os números e como reproduzir: [eval/RESULTS.md](../eval/RESULTS.md).
 
 ## Como funciona
 

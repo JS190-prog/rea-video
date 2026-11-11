@@ -171,7 +171,7 @@ Les deux chiffres holdout correspondent respectivement à holdout (9 vidéos) et
 
 Sur les fichiers originaux, les outils seuls suffisent la plupart du temps. Les vidéos téléchargées sur les plateformes sont recompressées, ce qui efface les indices liés au bruit : pour repasser au-dessus de 99 %, il faut une vérification visuelle.
 
-La détection des assets réels atteint 97 à 99 %, et toutes les limites de plans sont correctes. Les chiffres et la méthode pour les reproduire : [eval/RESULTS.md](../eval/RESULTS.md).
+La détection des assets réels atteint 97 à 99 % ; sur neuf clips annotés à la main, les limites de plans sont détectées avec 95 % de rappel et 94 % de précision. Les chiffres et la méthode pour les reproduire : [eval/RESULTS.md](../eval/RESULTS.md).
 
 ## Comment ça marche
 

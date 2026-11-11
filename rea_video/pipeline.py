@@ -359,7 +359,7 @@ def _ai_or_live_doubt(label: str, facts: dict, prov: dict, vctx: dict, seen_live
                  l=LABEL_ZH[label], h=join(FILM_HINT_ZH[k] for k in hints))
     if label == "ai_video" and facts.get("pulldown") in PULLDOWN_24 and not (prov.get("hints") or {}).get("generator"):
         # a cinema / mirrorless camera shooting 24p and exported at 30 fps leaves the same cadence as a generator:
-        # measured on a phone clip converted 30 -> 24 -> 30, the tools call it AI at 89% (eval/RESULTS.md 2026-11-01)
+        # measured on a phone clip converted 30 -> 24 -> 30, the tools call it AI at 89%
         if seen_live >= 0.5:
             return T("AI 还是 24p 相机实拍待确认：帧率痕迹只说明素材是 24fps 源，看图的一方认为是实拍，又没有 AIGC 标识",
                      "AI or 24p camera footage, to confirm: the frame-rate marks only say the source was 24fps, the image reader calls it live action, and there is no AIGC label")

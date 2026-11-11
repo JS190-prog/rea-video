@@ -171,7 +171,7 @@ Die beiden Holdout-Werte gelten für holdout (9 Videos) bzw. holdout2 (7 Videos)
 
 Bei Originaldateien reichen meist schon die Tools. Von Plattformen heruntergeladene Videos sind neu komprimiert, dabei gehen die Rauschspuren verloren – um wieder über 99 % zu kommen, braucht es dann eine visuelle Prüfung.
 
-Echte Assets werden zu 97–99 % erkannt, die Shot-Grenzen stimmen alle. Zahlen und wie du sie reproduzierst: [eval/RESULTS.md](../eval/RESULTS.md).
+Echte Assets werden zu 97–99 % erkannt; bei neun von Hand annotierten Clips werden die Shot-Grenzen mit 95 % Recall und 94 % Precision gefunden. Zahlen und wie du sie reproduzierst: [eval/RESULTS.md](../eval/RESULTS.md).
 
 ## Wie es funktioniert
 

@@ -89,7 +89,7 @@ def _norm(d: dict[str, float]) -> dict[str, float]:
 
 # Photographic-picture guards: platform transcodes make real footage look "rendered" (flat blocks, small palette).
 # Each guard needs evidence a render cannot fake easily. Thresholds were measured over every shot of eval/*.yaml
-# (labels, holdout, holdout2, articles, koubo); see eval/RESULTS.md 2026-10-30 for the distributions.
+# (labels, holdout, holdout2, articles, koubo).
 RULES = {
     # dim footage: near-black blocks that still carry grain (a rendered dark background is one exact colour,
     # block std 0), lit parts not flat, and a face on screen (dark UI / 3D on black have no face)

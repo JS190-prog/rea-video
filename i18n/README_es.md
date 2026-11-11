@@ -171,7 +171,7 @@ En la columna de holdout, la primera cifra es holdout (9 vídeos) y la segunda, 
 
 Con los archivos originales, las herramientas solas suelen bastar. Los vídeos descargados de plataformas vienen recomprimidos y pierden la evidencia del ruido, así que para volver a pasar del 99 % hace falta una revisión visual.
 
-La detección de material real acierta entre un 97 y un 99 %, y todos los cortes entre planos salen bien. Las cifras y cómo reproducirlas, en [eval/RESULTS.md](../eval/RESULTS.md).
+La detección de material real acierta entre un 97 y un 99 %; en nueve clips anotados a mano, los cortes entre planos se detectan con un 95 % de recall y un 94 % de precisión. Las cifras y cómo reproducirlas, en [eval/RESULTS.md](../eval/RESULTS.md).
 
 ## Cómo funciona
 
