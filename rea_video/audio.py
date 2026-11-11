@@ -526,7 +526,7 @@ def refine_with_stems(audio: dict, vocals_wav: str) -> dict:
     if st:
         rep = vocal_repetition(x, freqs)
         st["chorus_repeat_share"] = rep
-        if rep > 0.1 and st["style"] == "speech":  # repeated melodic lines = a song (rap included), narration never repeats
+        if rep > 0.1 and st["style"] == "speech":  # repeated melodic lines = a song (rap included); narration does not repeat
             st["style"], st["sung"] = "rap_or_rhythmic", True
         voice.update(st)
         voice["style_measured_on"] = "vocals_stem"
@@ -535,9 +535,11 @@ def refine_with_stems(audio: dict, vocals_wav: str) -> dict:
 
 def vocal_repetition(x: np.ndarray, freqs: np.ndarray, win_s: float = 4.0, min_lag_s: float = 6.0) -> float:
     """Share of 4 s vocal windows whose pitch-class pattern recurs >= 6 s later (choruses / hooks).
-    Measured on the dry vocal stem: AI rap MV 0.26, TTS narration 0.00."""
-    S = _stft(x)
-    C = _chroma(S, freqs)
+    The clip's average pitch-class profile is removed first: one voice speaking keeps roughly the same
+    profile the whole time, so without this every window of plain narration "matches" every other one.
+    What is left is the melodic movement, which only repeats when a line is sung (or rapped) again."""
+    S = _stft(x).astype(np.float64)
+    C = _chroma(S, freqs).astype(np.float64)
     e = (S ** 2).sum(axis=1)
     blk = max(1, int(0.25 / T_HOP))
     n = len(C) // blk
@@ -546,6 +548,9 @@ def vocal_repetition(x: np.ndarray, freqs: np.ndarray, win_s: float = 4.0, min_l
     C = C[:n * blk].reshape(n, blk, 12).mean(axis=1)
     E = 10 * np.log10(e[:n * blk].reshape(n, blk).mean(axis=1) + 1e-12)
     act = E > np.percentile(E, 95) - 30
+    if not act.any():
+        return 0.0
+    C = C - C[act].mean(axis=0)
     W = int(win_s / 0.25)
     feats, idx = [], []
     for i in range(0, n - W, 2):
@@ -557,6 +562,7 @@ def vocal_repetition(x: np.ndarray, freqs: np.ndarray, win_s: float = 4.0, min_l
     if len(feats) < 4:
         return 0.0
     F, idx = np.array(feats), np.array(idx)
-    sim = F @ F.T / F.shape[1]
+    with np.errstate(all="ignore"):  # some BLAS builds raise spurious floating-point flags on large products
+        sim = F @ F.T / F.shape[1]
     sim[np.abs(idx[:, None] - idx[None, :]) * 0.25 < min_lag_s] = -1
     return round(float((sim.max(axis=1) > 0.6).mean()), 3)

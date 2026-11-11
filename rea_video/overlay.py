@@ -70,16 +70,42 @@ def rec_model(lang: str) -> Path:
     return p
 
 
+class _RapidOCR3:
+    """rapidocr 3.x (used on Python >= 3.13, where rapidocr-onnxruntime has no release) behind the
+    rapidocr-onnxruntime call shape: ocr(img) -> ([[box, text, score], ...] or None, elapse)."""
+
+    def __init__(self, rec_model_path: str | None = None):
+        from rapidocr import RapidOCR  # type: ignore
+
+        params = {"Global.log_level": "warning"}
+        if rec_model_path:  # its character list is read from the ONNX metadata, as with rapidocr-onnxruntime
+            params["Rec.model_path"] = rec_model_path
+        self._ocr = RapidOCR(params=params)
+
+    def __call__(self, img):
+        out = self._ocr(img)
+        boxes, txts, scores = getattr(out, "boxes", None), getattr(out, "txts", None), getattr(out, "scores", None)
+        if boxes is None or txts is None or scores is None:
+            return None, getattr(out, "elapse", 0.0)
+        return [[np.asarray(b).tolist(), t, float(s)] for b, t, s in zip(boxes, txts, scores)], out.elapse
+
+
+def _ocr_engine(**kwargs):
+    try:
+        from rapidocr_onnxruntime import RapidOCR  # type: ignore
+    except ImportError:
+        return _RapidOCR3(**kwargs)
+    return RapidOCR(**kwargs)
+
+
 def get_ocr():
     lang = ocr_lang()
     if lang not in _OCR:
         try:
-            from rapidocr_onnxruntime import RapidOCR  # type: ignore
-
             kwargs = {"rec_model_path": str(rec_model(lang))} if lang in _REC_MODELS else {}
-            _OCR[lang] = RapidOCR(**kwargs)
+            _OCR[lang] = _ocr_engine(**kwargs)
         except Exception as exc:  # pragma: no cover - optional dependency / offline
-            LOG.warning("OCR disabled (pip install rapidocr-onnxruntime to enable; lang=%s): %s", lang, exc)
+            LOG.warning("OCR disabled (pip install 'rea-video[ocr]' to enable; lang=%s): %s", lang, exc)
             _OCR[lang] = None
     return _OCR[lang]
 

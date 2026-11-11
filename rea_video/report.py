@@ -42,8 +42,10 @@ ROUTE_ZH = LangDict({"ai_video": "AI 生成（首尾帧）", "live_action": "实
                     en={"ai_video": "AI generation (first / last frame)", "live_action": "reshoot", "avatar": "TTS + avatar", "cg_3d": "AI generation / 3D render",
                         "code_render": "code render", "screen_capture": "screen recording", "still_motion": "local ffmpeg move", "static_hold": "static frame",
                         "anim_2d": "AI generation (2D animation)", "stop_motion": "stop motion shoot", "film_footage": "cut from the source film"})
-SFX_SRC_ZH = LangDict({"vlm": "听到", "deterministic": "信号候选（低置信）", "review": "看图复核", "merged": "听到 + 信号"},
-                      en={"vlm": "heard", "deterministic": "signal candidate (low confidence)", "review": "agent review", "merged": "heard + signal"})
+SFX_SRC_ZH = LangDict({"vlm": "听到", "deterministic": "信号候选（低置信）", "deterministic_anchored": "信号候选，对上文字/贴纸出现（低置信）",
+                       "review": "看图复核", "merged": "听到 + 信号"},
+                      en={"vlm": "heard", "deterministic": "signal candidate (low confidence)", "deterministic_anchored": "signal candidate at a text / sticker pop (low confidence)",
+                          "review": "agent review", "merged": "heard + signal"})
 ENDING_ZH = LangDict({"natural_end": "自然结束", "fade_out": "淡出", "hard_cut": "硬切断"}, en={"natural_end": "ends naturally", "fade_out": "fades out", "hard_cut": "cut off hard"})
 NARR_ZH = LangDict({"tts": "TTS 合成", "human": "真人", "none": "无", "mixed": "真人 + TTS"}, en={"tts": "TTS", "human": "human", "none": "none", "mixed": "human + TTS"})
 
@@ -335,7 +337,10 @@ def _audio_md(b: dict) -> list[str]:
 
     # sfx
     sfx = (b.get("audio_plan") or {}).get("sfx_merged", [])
-    L += ["", T("**音效**", "**Sound effects**") + (f"（{len(sfx)}）" if sfx and lang() == "zh" else (f" ({len(sfx)})" if sfx else "")), ""]
+    n_maybe = sum(1 for e in sfx if e.get("confidence") == "low")
+    count = (T("{n}，其中 {m} 处是待确认的信号候选", "{n}, of which {m} are unconfirmed signal candidates", n=len(sfx), m=n_maybe)
+             if n_maybe and n_maybe < len(sfx) else T("{n}，都是待确认的信号候选", "{n}, all unconfirmed signal candidates", n=len(sfx)) if n_maybe else str(len(sfx)))
+    L += ["", T("**音效**", "**Sound effects**") + (f"（{count}）" if sfx and lang() == "zh" else (f" ({count})" if sfx else "")), ""]
     if sfx:
         rows = []
         for e in sfx[:60]:

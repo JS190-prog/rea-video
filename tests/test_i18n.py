@@ -41,3 +41,20 @@ def test_image_labels_follow_language():
         assert LABEL_SHORT["code_render"] == "代码渲染"
     finally:
         set_lang("zh")
+
+
+def test_summary_without_tempo_prints_no_bpm(tmp_path, capsys):
+    import json
+
+    from rea_video.cli import main
+
+    b = {"lang": "en", "source": {"filename": "x.mp4", "duration": 1.0, "width": 16, "height": 16, "fps": 1.0},
+         "summary": {"verdict": "x", "confidence": 1.0, "vlm": "none"}, "shots": [],
+         "audio": {"has_audio": True, "voice": {"present": True, "ratio": 0.8}, "music": {"present": False, "ratio": 0.0, "segments": []}}}
+    p = tmp_path / "breakdown.json"
+    p.write_text(json.dumps(b), encoding="utf-8")
+    try:
+        assert main(["summary", str(p)]) == 0
+    finally:
+        set_lang("zh")
+    assert "NoneBPM" not in capsys.readouterr().out

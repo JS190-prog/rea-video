@@ -46,7 +46,8 @@ install_failed() {
   exit 1
 }
 
-# rapidocr 依赖 opencv-python，和 rea-video 的 opencv-python-headless 共用 cv2 目录，后装的覆盖先装的。
+# Python ≤ 3.12 上的 OCR 依赖 rapidocr-onnxruntime 会带上 opencv-python，和 rea-video 的 opencv-python-headless
+# 共用 cv2 目录，后装的覆盖先装的（3.13 及以上用的 rapidocr 3 不带，下面自然跳过）。
 # 只留 headless 一套：删掉 opencv-python 后强制重装 headless（删除会带走共用文件）。
 dedupe_cv() {  # 参数：能跑 pip 的命令，如 python -m pip / pipx runpip rea-video
   if "$@" show opencv-python >/dev/null 2>&1; then

@@ -584,6 +584,31 @@ def _decor_score(c: dict) -> tuple[int, list[str]]:
 _NUMERIC = re.compile(r"[+\-−]?[¥$€£]?[\d.,，．:：%+\-−万亿千百kKmMwW]*\d[\d.,，．:：%+\-−万亿千百kKmMwW]*")
 
 
+def _block_lines(c: dict, cues: list[dict]) -> int:
+    """Other lines on screen at the same time, of about the same size, stacked within a few lines of this one:
+    the rest of a paragraph / list / page it belongs to."""
+    cy = c["bbox"][1] + c["bbox"][3] / 2
+    n = 0
+    for o in cues:
+        if o is c or o["t0"] >= c["t1"] - 0.05 or o["t1"] <= c["t0"] + 0.05:
+            continue
+        if not 0.7 <= o["line_h"] / max(c["line_h"], 1e-6) <= 1.4:
+            continue
+        if abs(o["bbox"][1] + o["bbox"][3] / 2 - cy) <= 4 * c["line_h"]:
+            n += 1
+    return n
+
+
+def _aligned(lane: list[dict]) -> bool:
+    """Lines of one subtitle track share a horizontal anchor: centred, left- or right-aligned. Words of a page
+    (a menu, a file list, a button) that happen to sit at the same height are scattered across it."""
+    if len(lane) < 2:
+        return True
+    anchors = ([c["bbox"][0] for c in lane], [c["bbox"][0] + c["bbox"][2] / 2 for c in lane],
+               [c["bbox"][0] + c["bbox"][2] for c in lane])
+    return min(float(np.median(np.abs(np.array(a) - np.median(a)))) for a in anchors) <= 0.05
+
+
 def classify_cues(cues: list[dict], duration: float) -> None:
     """Assign each cue a kind (subtitle / huazi / title / label / scene)."""
     # lanes: cues stacked at the same place one after another
@@ -612,10 +637,22 @@ def classify_cues(cues: list[dict], duration: float) -> None:
         numbered = changing >= 2 and len({_numbers(c["text"])[0] for c in lane}) == 1 and all(_numbers(c["text"])[1] for c in lane)
         is_sub = ((changing >= 3 or (changing >= 2 and duration < 15)) and 0.7 <= med <= 7.0 and h < 0.07 and not tilted
                   and not counter and not numbered)
+        # words of a page / document in the picture (a screenshot, a recorded screen) can line up at one height and
+        # change like a subtitle track. Each of them is one line among others of the same size on screen with it:
+        # a lane made only of such lines is page text, and in a lane whose lines do not share a horizontal anchor
+        # the lines sitting in such a block are page text while the lone ones may still be captions
+        page = set()
+        if is_sub:
+            block = {id(c): _block_lines(c, cues) for c in lane}
+            if len(lane) >= 3 and all(n >= 3 for n in block.values()):
+                page = {id(c) for c in lane}
+            elif not _aligned(lane):
+                page = {id(c) for c in lane if block[id(c)] >= 2}
         for c in lane:
             c["_counter"] = counter
             c["lane"] = lanes.index(lane)
-            c["_sub_lane"] = is_sub
+            c["_page"] = id(c) in page
+            c["_sub_lane"] = is_sub and not c["_page"]
             c["_lane_texts"] = changing
     for c in cues:
         st = c.get("style") or {}
@@ -626,6 +663,10 @@ def classify_cues(cues: list[dict], duration: float) -> None:
         if moving and not (st.get("stroke") or st.get("box")):
             kind = "scene"
             why = [T("跟着画面移动、没有描边或底框", "moves with the picture, no outline or box")]
+        elif c.get("_page"):
+            kind = "scene"
+            why = [T("画面里页面/文档的字：和同字号的几行字同时出现、挨在一起",
+                     "text of a page / document in the picture: one line in a block of same-size lines on screen together")]
         elif c.get("_sub_lane") and not (score >= 3 and c["line_h"] >= 0.05):
             kind = "subtitle"
         elif cy < 0.3 and (dur >= 0.5 * duration or dur >= 8) and not moving and c.get("_lane_texts", 1) == 1:
@@ -644,6 +685,7 @@ def classify_cues(cues: list[dict], duration: float) -> None:
             c["follows"] = True  # tracked to an object in the picture (label with a leader / tag)
         c["band"] = _band(cy)
         c.pop("_sub_lane", None)
+        c.pop("_page", None)
         c.pop("_lane_texts", None)
 
 
@@ -1157,6 +1199,7 @@ def align_sfx(sfx: list[dict], events: list[dict]) -> dict:
     """Which on-screen event each sound effect lands on, and which pops / stickers carry a sound."""
     times = np.array([e["t"] for e in events]) if events else np.zeros(0)
     counts: dict[str, int] = {}
+    possible: dict[str, int] = {}  # low-confidence signal candidates, kept apart from heard / reviewed effects
     for s in sfx:
         t = float(s.get("t", -9))
         if not len(times):
@@ -1167,7 +1210,8 @@ def align_sfx(sfx: list[dict], events: list[dict]) -> dict:
         i = order[0]
         if d[i] <= SFX_TOL:
             s["on"] = {"type": events[i]["type"], "what": events[i]["what"], "dt": round(float(events[i]["t"] - t), 3), "ref": events[i]["ref"]}
-            counts[events[i]["type"]] = counts.get(events[i]["type"], 0) + 1
+            tally = possible if s.get("confidence") == "low" else counts
+            tally[events[i]["type"]] = tally.get(events[i]["type"], 0) + 1
     st = np.array([float(s.get("t", -9)) for s in sfx]) if sfx else np.zeros(0)
     voiced = {}
     for e in events:
@@ -1177,7 +1221,7 @@ def align_sfx(sfx: list[dict], events: list[dict]) -> dict:
         k = e["type"]
         a, b = voiced.get(k, (0, 0))
         voiced[k] = (a + has, b + 1)
-    return {"sfx_on": counts, "events_with_sfx": {k: {"with_sfx": a, "total": b} for k, (a, b) in voiced.items()}}
+    return {"sfx_on": counts, "sfx_on_possible": possible, "events_with_sfx": {k: {"with_sfx": a, "total": b} for k, (a, b) in voiced.items()}}
 
 
 def anchored_sfx(path: str | Path, events: list[dict], known: list[dict]) -> list[dict]:
@@ -1570,6 +1614,10 @@ def summary_lines(pack: dict, sfx_align: dict | None = None) -> list[str]:
         on = sfx_align.get("sfx_on", {})
         if on:
             L.append(T("音效卡点：", "SFX hits on: ") + join(T("{k} {v} 处", "{k} ×{v}", k=EVENT_ZH.get(k, k), v=v) for k, v in sorted(on.items(), key=lambda kv: -kv[1])))
+        maybe_on = sfx_align.get("sfx_on_possible", {})
+        if maybe_on:
+            L.append(T("可能的音效卡点（信号候选，待确认）：", "Possible SFX hits (unconfirmed signal candidates) on: ")
+                     + join(T("{k} {v} 处", "{k} ×{v}", k=EVENT_ZH.get(k, k), v=v) for k, v in sorted(maybe_on.items(), key=lambda kv: -kv[1])))
     elems = [c for c in cues if c["kind"] in ANCHOR_KINDS and not c.get("part_of_picture")] + st
     anchored = sorted((e for e in elems if e.get("anchor")), key=lambda e: (not e["anchor"].get("word"), e["t0"]))
     if anchored:

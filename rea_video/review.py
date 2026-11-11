@@ -46,8 +46,8 @@ kind 取 {"|".join(ASSET_KINDS)}，is_real_material 为 true/false）。
 某个镜头其实是多刀合并的（暗底图形卡和暗底口播交替时，切点分数低容易被合成一个长镜头）就加 split_suggestion：
 {{"cuts": [切点秒数], "labels": [各段类别，比 cuts 多一个], "note": "看到的交替结构"}}，报告会在该镜头标注拆分建议；不是合并段就不要填。
 实拍或定格镜头被 AI 二次加工过时填 ai_edits：[{{"kind": "{"|".join(EDIT_KINDS)}", "evidence": "看到的破绽"}}]（换脸、对口型、风格化、换装、换背景、加删物体、美颜）；没有就留空。
-AI 生成 / 3D / 实拍镜头再填 replication：image_prompt（复刻首帧的中文图像提示词：景别、机位高度和俯仰角、主体在画面里的位置和朝向、主体、光线、风格，具体可执行）、
-video_prompt（复刻该镜头的中文视频提示词：先写景别、机位角度、主体在画面里的位置，再写动作过程和结束状态、运镜；只写想要的内容，不写否定句）、video_prompt_en（英文版）。
+AI 生成 / 3D / 实拍镜头再填 replication：image_prompt（复刻首帧的<PROMPT_LANG>图像提示词：景别、机位高度和俯仰角、主体在画面里的位置和朝向、主体、光线、风格，具体可执行）、
+video_prompt（复刻该镜头的<PROMPT_LANG>视频提示词：先写景别、机位角度、主体在画面里的位置，再写动作过程和结束状态、运镜；只写想要的内容，不写否定句）、video_prompt_en（英文版）。
 这些提示词会被合并进「生成单元」的多镜头提示词，所以每镜只写这一镜的内容，统一的风格和场景描述写在 description 里即可。
 
 实拍/写实镜头再填 aspects（怎么拍、怎么打光；纯图形/界面画面不填），像素测不出的部分靠你看：
@@ -158,7 +158,10 @@ def build_tasks(breakdown: dict, out_dir: str) -> tuple[dict, dict]:
         s["tool"]["evidence"] = [e for e in s["tool"]["evidence"] if e not in common]
         if "aspects" in s:
             s["aspects"] = _strip_glosses(s["aspects"])
-    tasks = {"instructions": INSTRUCTIONS, "video": video, "storyboard": "storyboard.jpg",
+    instructions = INSTRUCTIONS.replace("<PROMPT_LANG>", "英文" if breakdown.get("lang") == "en" else "中文")
+    if breakdown.get("lang") == "en":
+        instructions += "\n\n报告语言是英文：evidence、description、image_prompt、video_prompt 和其他自由文本都用英文写（video_prompt_en 可以和 video_prompt 相同）。"
+    tasks = {"instructions": instructions, "video": video, "storyboard": "storyboard.jpg",
              "zoom_cmd": _tiles_cmd(video, 0, 0, 0.2, f"{out_dir}/check_ID.jpg")
              .replace("--start 0.00 --end 0.00", "--start {start} --end {end}").replace("check_ID.jpg", "check_{id}.jpg"),
              "shot_aspects_template": aspects.review_template(),
@@ -257,6 +260,7 @@ def apply_answers(breakdown: dict, answers: dict, by: str | None = None) -> dict
         rec["review"] = clean
         applied.append(sid)
         changes.append((sid, before))
+    pk_applied: dict = {}
     pk = answers.get("packaging")
     if isinstance(pk, dict) and breakdown.get("packaging"):
         kinds = ("subtitle", "huazi", "title", "label", "counter", "scene")
@@ -266,6 +270,7 @@ def apply_answers(breakdown: dict, answers: dict, by: str | None = None) -> dict
                     "missed": [m for m in pk.get("missed") or [] if isinstance(m, dict) and "t0" in m], "by": by}
         if clean_pk["stickers"] or clean_pk["text"] or clean_pk["missed"]:
             breakdown["packaging"]["review"] = clean_pk
+            pk_applied = {k: len(clean_pk[k]) for k in ("stickers", "text", "missed") if clean_pk[k]}
     whole = aspects.clean_answers(answers.get("aspects"), video=True)
     if whole:
         breakdown["review_aspects"] = whole
@@ -277,4 +282,4 @@ def apply_answers(breakdown: dict, answers: dict, by: str | None = None) -> dict
         breakdown["review_cast"] = cast
     breakdown.setdefault("analysis", {})["review"] = {"by": by, "shots": len(applied), "of": len(breakdown["shots"]),
                                                        "time": time.strftime("%Y-%m-%d %H:%M"), "problems": problems}
-    return {"applied": applied, "problems": problems, "unanswered": unanswered, "before": dict(changes)}
+    return {"applied": applied, "problems": problems, "unanswered": unanswered, "before": dict(changes), "packaging": pk_applied}

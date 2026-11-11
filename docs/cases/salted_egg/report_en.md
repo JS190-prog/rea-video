@@ -9,7 +9,7 @@
 - Confidence (duration-weighted): 98%; method: deterministic forensics fused with a vision model (VLM)
 - VLM active (gemini-3.1-pro-preview, gemini-3.1-pro-preview-pc, gcp-gemini-3-pro-preview)
 
-![storyboard](storyboard.jpg)
+![storyboard](storyboard_en.jpg)
 
 ## Production method share
 
@@ -291,7 +291,7 @@ Shot 3 (5.8-9.3s): Static camera, three fluffy cartoon animal characters standin
 
 ## Audio breakdown
 
-![audio](audio.png)
+![audio](audio_en.png)
 
 - Overall loudness −17.3 dBFS, peak −1.6 dBFS
 - **Voice**: present, 76% of duration, fundamental about 319.6 Hz (reads female)

@@ -1,5 +1,5 @@
-name: 求拆解
-description: 有条视频想知道是怎么做的？贴链接，我们拆完发成案例。
+name: 求拆解 / Request a breakdown
+description: 有条视频想知道是怎么做的？贴链接，我们拆完发成案例。/ Want to know how a video was made? Paste the link and we'll publish the breakdown as a case.
 title: "[求拆解] "
 labels: ["求拆解"]
 body:
@@ -7,37 +7,39 @@ body:
     attributes:
       value: |
         拆完的结果会发到 [docs/cases.md](https://github.com/JuneYaooo/rea-video/blob/main/docs/cases.md)，附逐镜头拼帧和报告。请只提交你有权分享的公开视频。
+
+        The result goes to [docs/cases.md](https://github.com/JuneYaooo/rea-video/blob/main/docs/cases.md) with per-shot contact sheets and a report. Please only submit public videos you are allowed to share.
   - type: input
     id: link
     attributes:
-      label: 视频链接
-      description: 抖音、B 站、小红书、YouTube、TikTok 都行。没有链接就说明怎么找到它。
+      label: 视频链接 / Video link
+      description: 抖音、B 站、小红书、YouTube、TikTok 都行。没有链接就说明怎么找到它。/ Douyin, Bilibili, Xiaohongshu, YouTube, TikTok all work. No link? Tell us how to find it.
       placeholder: https://
     validations:
       required: true
   - type: dropdown
     id: want
     attributes:
-      label: 最想知道什么
+      label: 最想知道什么 / What do you most want to know
       multiple: true
       options:
-        - 是实拍、AI 还是代码做的
-        - 实拍怎么拍（机位、布光、调色）
-        - AI 镜头的提示词和用哪个模型
-        - 字幕、花字、剪辑节奏
-        - 配乐和音效是怎么来的
-        - 整条怎么复刻、要花多少钱
+        - 是实拍、AI 还是代码做的 / Live action, AI or code-rendered
+        - 实拍怎么拍（机位、布光、调色）/ How the live footage was shot (camera, lighting, grading)
+        - AI 镜头的提示词和用哪个模型 / Prompts and models for the AI shots
+        - 字幕、花字、剪辑节奏 / Captions, text effects and editing rhythm
+        - 配乐和音效是怎么来的 / Where the music and sound effects came from
+        - 整条怎么复刻、要花多少钱 / How to remake it and what it costs
     validations:
       required: true
   - type: textarea
     id: guess
     attributes:
-      label: 你自己的判断
-      description: 可不填。你觉得它是怎么做的、哪里看不出来，写下来方便对照。
+      label: 你自己的判断 / Your own take
+      description: 可不填。你觉得它是怎么做的、哪里看不出来，写下来方便对照。/ Optional. How you think it was made and what you can't tell, so we can compare.
   - type: checkboxes
     id: publish
     attributes:
-      label: 发布
+      label: 发布 / Publication
       options:
-        - label: 同意把拆解结果作为公开案例发在仓库里
+        - label: 同意把拆解结果作为公开案例发在仓库里 / I agree to publish the breakdown as a public case in this repository
           required: true

@@ -105,3 +105,34 @@ def test_split_suggestion_rejects_malformed_input_instead_of_raising():
     # cuts come back sorted, labels stay as given
     ok, err = _clean({**base, "split_suggestion": {"cuts": [40, 12.5], "labels": ["code_render", "live_action", "code_render"]}})
     assert err is None and ok["split_suggestion"]["cuts"] == [12.5, 40.0]
+
+
+def test_packaging_only_answers_count_as_applied(media, tmp_path, capsys):
+    out = tmp_path / "p"
+    b = decompose(media["code"], out, use_vlm=False, ocr=False, workers=1, stems=False)
+    if not b.get("packaging"):
+        b["packaging"] = {"text_cues": [], "stickers": []}
+        (out / "breakdown.json").write_text(json.dumps(b, ensure_ascii=False), encoding="utf-8")
+    ans = tmp_path / "a.json"
+    ans.write_text(json.dumps({"shots": [], "packaging": {"text": [{"id": "text_001", "kind": "scene"}]}}), encoding="utf-8")
+    assert main(["apply-review", str(out), str(ans), "--by", "tester"]) == 0
+    assert json.loads((out / "breakdown.json").read_text(encoding="utf-8"))["packaging"]["review"]["text"] == {"text_001": "scene"}
+    empty = tmp_path / "e.json"
+    empty.write_text(json.dumps({"shots": []}), encoding="utf-8")
+    assert main(["apply-review", str(out), str(empty), "--by", "tester"]) == 1
+
+
+def test_english_review_asks_for_english_prompts(media, tmp_path):
+    from rea_video.review import build_tasks
+
+    from rea_video.i18n import set_lang
+
+    try:
+        b = decompose(media["code"], tmp_path / "en", use_vlm=False, ocr=False, workers=1, stems=False, lang="en")
+    finally:
+        set_lang("zh")
+    tasks, _ = build_tasks(b, str(tmp_path / "en"))
+    assert "中文图像提示词" not in tasks["instructions"] and "英文图像提示词" in tasks["instructions"]
+    b["lang"] = "zh"
+    tasks, _ = build_tasks(b, str(tmp_path / "en"))
+    assert "中文图像提示词" in tasks["instructions"] and "<PROMPT_LANG>" not in tasks["instructions"]

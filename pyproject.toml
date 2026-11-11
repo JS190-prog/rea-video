@@ -18,9 +18,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# rapidocr 会顺带装 opencv-python（带 GUI 的那套），和上面的 headless 抢同一个 cv2 目录；
-# scripts/install_skill.sh 装完会删掉它、重装 headless。手动安装见 setup.md。
-ocr = ["rapidocr-onnxruntime>=1.3,<2"]
+# Python ≤ 3.12 用 rapidocr-onnxruntime；它没有 3.13 及以上的版本，那里改用 rapidocr 3（同一个作者的新包）。
+# rapidocr-onnxruntime 会顺带装 opencv-python（带 GUI 的那套），和上面的 headless 抢同一个 cv2 目录；
+# scripts/install_skill.sh 装完会删掉它、重装 headless。手动安装见 setup.md。rapidocr 3 本身就用 headless。
+ocr = [
+  "rapidocr-onnxruntime>=1.3,<2; python_version < '3.13'",
+  "rapidocr>=3.4,<4; python_version >= '3.13'",
+]
 dev = ["pytest>=7", "jsonschema>=4"]
 
 [project.scripts]

@@ -88,3 +88,29 @@ def test_held_chord_is_still_music(tmp_path):
 def test_beat_survives_percussive_floor(music_mp4):
     r = analyze_audio(str(music_mp4))
     assert not r["music"].get("no_beat") and r["music"].get("tempo_bpm")
+
+
+def _syllables(pitches_hz, syl=0.25, gap=0.05, seed=0):
+    """One voice: the same harmonic timbre throughout, a gliding pitch per syllable, short gaps between."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for f in pitches_hz:
+        t = np.arange(int(syl * SR)) / SR
+        glide = f * (1 + rng.uniform(-0.15, 0.15) * t / syl)
+        ph = 2 * np.pi * np.cumsum(glide) / SR
+        y = sum((0.7 ** k) * np.sin((k + 1) * ph) for k in range(8))
+        out += [y * np.hanning(len(t)), np.zeros(int(gap * SR))]
+    y = np.concatenate(out)
+    return 0.3 * y / np.abs(y).max()
+
+
+def test_vocal_repetition_separates_narration_from_repeated_lines():
+    from rea_video.audio import N_FFT, vocal_repetition
+
+    freqs = np.fft.rfftfreq(N_FFT, 1 / SR)
+    rng = np.random.default_rng(1)
+    speech = _syllables(rng.uniform(110, 190, 100))  # 30 s, the pitch never retraces a line
+    line = rng.choice([220.0, 246.9, 261.6, 293.7, 329.6, 349.2, 392.0], 26)
+    song = _syllables(np.tile(line, 4), syl=0.25, gap=0.05)  # an ~8 s line sung four times
+    assert vocal_repetition(speech, freqs) <= 0.1
+    assert vocal_repetition(song, freqs) > 0.3

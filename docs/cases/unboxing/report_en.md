@@ -9,7 +9,7 @@
 - Confidence (duration-weighted): 82%; method: deterministic forensics fused with a vision model (VLM)
 - VLM active (gemini-3.1-pro-preview, gemini-3.1-pro-preview-pc, gcp-gemini-3-pro-preview @ daydream88.fun); the agent (claude) visually reviewed 29 of 29 shots, merged into the verdict
 
-![storyboard](storyboard.jpg)
+![storyboard](storyboard_en.jpg)
 
 ## Production method share
 
@@ -136,7 +136,7 @@ Gear:
 
 ## Audio breakdown
 
-![audio](audio.png)
+![audio](audio_en.png)
 
 - Overall loudness -28.3 dBFS, peak -0.0 dBFS
 - **Voice**: present, 33% of duration, fundamental about 157.5 Hz (gender unclear)

@@ -760,9 +760,12 @@ def finalize(breakdown: dict, out: Path, engine: str | None = None) -> dict:
         a_parts.append(T("BGM {bpm}（{src}", "music {bpm} ({src}", bpm=T("无明显节拍", "no clear beat") if audio['music'].get('no_beat') else f"{audio['music'].get('tempo_bpm', '?')}BPM",
                          src=ms.get('source_zh', T('来源待确认', 'source to confirm')))
                        + (T("，倾向{m}", ", leaning {m}", m=MUSIC_ZH[ms['leaning']]) if ms.get("source") == "unknown" else "") + T("）", ")"))
-    n_sfx = len(breakdown["audio_plan"].get("sfx_merged", []))
-    if n_sfx:
-        a_parts.append(T("音效 {n} 处", "{n} sound effects", n=n_sfx))
+    sfx_all = breakdown["audio_plan"].get("sfx_merged", [])
+    n_maybe = sum(1 for e in sfx_all if e.get("confidence") == "low")
+    if len(sfx_all) - n_maybe:
+        a_parts.append(T("音效 {n} 处", "{n} sound effects", n=len(sfx_all) - n_maybe))
+    if n_maybe:
+        a_parts.append(T("可能的音效 {n} 处（信号候选，待确认）", "{n} possible sound effects (unconfirmed signal candidates)", n=n_maybe))
     if a_parts:
         summary["verdict"] += semi() + T("声音：", "audio: ") + " + ".join(a_parts)
     if pack:
@@ -778,10 +781,13 @@ def finalize(breakdown: dict, out: Path, engine: str | None = None) -> dict:
         n_st = sum(1 for st in pack.get("stickers", []) if not st.get("in_picture") and st.get("confidence") != "low")
         if n_st:
             p_parts.append(T("贴纸/动图 {n} 处", "stickers / GIFs ×{n}", n=n_st))
-        on = (pack.get("sfx_alignment") or {}).get("sfx_on", {})
-        n_on = sum(v for k, v in on.items() if k != "cut")
+        al = pack.get("sfx_alignment") or {}
+        n_on = sum(v for k, v in al.get("sfx_on", {}).items() if k != "cut")
         if n_on:
             p_parts.append(T("{n} 个音效卡在文字/贴纸出现上", "{n} sound effects land on text / sticker pops", n=n_on))
+        n_maybe_on = sum(v for k, v in al.get("sfx_on_possible", {}).items() if k != "cut")
+        if n_maybe_on:
+            p_parts.append(T("可能有 {n} 个音效卡在文字/贴纸出现上（待确认）", "{n} possible sound effects at text / sticker pops (unconfirmed)", n=n_maybe_on))
         if p_parts:
             summary["verdict"] += semi() + T("剪辑包装：", "packaging: ") + join(p_parts)
         summary["packaging"] = pack.get("summary_zh", [])

@@ -247,9 +247,42 @@ def test_numbered_labels_split_per_shot():
     assert all(c["kind"] == "label" for c in cues)
 
 
+def test_page_text_in_a_screenshot_is_not_a_subtitle():
+    """Words of a page at one height (tabs, a file list) change like a subtitle track but sit among other lines of
+    the same size and are scattered left to right; the caption band under the screenshot stays a subtitle."""
+    from rea_video.packaging import classify_cues
+
+    def cue(i, t0, t1, x, y, w, text, h=0.025):
+        return {"id": f"t{i}", "t0": t0, "t1": t1, "bbox": [x, y, w, h], "line_h": h, "angle": 0.0, "drift": 0.0,
+                "samples": 3, "text": text, "style": {}}
+
+    cues, i = [], 0
+    captions = ["这条才发二十一分钟", "就被判九成扑街", "封面顺序反了", "带钩子那张埋在第三张", "先别删拿它查查"]
+    words = ["docs", "Code", "main", "Pull requests", "README"]
+    for k in range(5):
+        t0, t1 = 2.0 * k, 2.0 * k + 1.6
+        cues.append(cue(i := i + 1, t0, t1, 0.5 - 0.04 * len(captions[k]) / 2, 0.875, 0.04 * len(captions[k]), captions[k], 0.033))
+        # one page word on the lane at y≈0.40, at a different place each time, with the page's other lines around it
+        cues.append(cue(i := i + 1, t0, t1, [0.1, 0.9, 0.1, 0.6, 0.3][k], 0.39, 0.08, words[k]))
+        for j, dy in enumerate((-0.06, -0.03, 0.03, 0.06)):
+            cues.append(cue(i := i + 1, t0, t1, 0.05, 0.39 + dy, 0.5, f"2 weeks ago {k}{j}"))
+    classify_cues(cues, 10.0)
+    kinds = {c["text"]: c["kind"] for c in cues}
+    assert all(kinds[t] == "subtitle" for t in captions)
+    assert all(kinds[t] == "scene" for t in words)
+
+
 def test_counter_ticking_every_frame_stays_one_cue():
     from rea_video.packaging import build_cues
 
     items = [{"t": k * 0.5, "text": f"第{k}名", "conf": 0.9, "bbox": [0.4, 0.1, 0.2, 0.03], "angle": 0.0, "style": None}
              for k in range(10)]
     assert len(build_cues(items, 0.5)) == 1
+
+
+def test_low_confidence_sfx_are_counted_as_possible():
+    from rea_video.packaging import align_sfx
+
+    events = [{"t": 1.0, "type": "text_in", "what": "A", "ref": "text_001"}, {"t": 2.0, "type": "text_in", "what": "B", "ref": "text_002"}]
+    al = align_sfx([{"t": 1.02, "source": "vlm"}, {"t": 2.01, "source": "deterministic_anchored", "confidence": "low"}], events)
+    assert al["sfx_on"] == {"text_in": 1} and al["sfx_on_possible"] == {"text_in": 1}

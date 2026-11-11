@@ -114,9 +114,11 @@ def cmd_apply_review(args) -> int:
           ("：" + ", ".join(f"{i} {a}→{c}" for i, a, c in changed) if changed else ""))
     print(f"结论: {b['summary']['verdict']}")
     print(f"VLM: {b['summary']['vlm']}")
-    if not log["applied"] and not log["problems"]:
+    if log.get("packaging"):
+        print("已并入包装复核：" + ", ".join(f"{k} {n}" for k, n in log["packaging"].items()))
+    if not log["applied"] and not log.get("packaging") and not log["problems"]:
         print("答案文件里没有可并入的镜头（先按 review_tasks.md 填 review_answers.json）")
-    return 0 if log["applied"] else 1
+    return 0 if log["applied"] or log.get("packaging") else 1
 
 
 def cmd_stems(args) -> int:
@@ -321,8 +323,8 @@ def cmd_summary(args) -> int:
     if a.get("has_audio"):
         mu = a.get("music", {})
         lines += ["", f"{T('人声', 'Voice')}: {a.get('voice', {}).get('present')} ({a.get('voice', {}).get('ratio')}) | {T('音乐', 'Music')}: {mu.get('present')} "
-                      f"{(T('无明显节拍', 'no beat') if mu.get('no_beat') else str(mu.get('tempo_bpm')) + 'BPM')} {(mu.get('key') or {}).get('tonic', '')}{(mu.get('key') or {}).get('mode', '')} | "
-                      f"{T('音效', 'SFX')}: {len((b.get('audio_plan') or {}).get('sfx_merged', []))} | {T('卡点', 'beat-synced')}: {a.get('beat_synced_edit')}"]
+                      f"{(T('无明显节拍', 'no beat') if mu.get('no_beat') else (str(mu['tempo_bpm']) + 'BPM' if mu.get('tempo_bpm') is not None else ''))} {(mu.get('key') or {}).get('tonic', '')}{(mu.get('key') or {}).get('mode', '')} | "
+                      f"{T('音效', 'SFX')}: {_sfx_count(b)} | {T('卡点', 'beat-synced')}: {a.get('beat_synced_edit')}"]
         if (b.get("sound_sources") or {}).get("summary_zh"):
             lines.append(f"{T('声音来源', 'Sound sources')}: " + b["sound_sources"]["summary_zh"])
         if (b.get("stems") or {}).get("ok"):
@@ -340,6 +342,13 @@ def cmd_summary(args) -> int:
             lines.append(f"{T('包装文件', 'Packaging files')}: " + " ".join(pk["files"].values()))
     print("\n".join(lines))
     return 0
+
+
+def _sfx_count(b: dict) -> str:
+    sfx = (b.get("audio_plan") or {}).get("sfx_merged", [])
+    maybe = sum(1 for e in sfx if e.get("confidence") == "low")
+    sure = len(sfx) - maybe
+    return f"{sure}" + (T(" + 可能 {m}（待确认）", " + {m} possible (unconfirmed)", m=maybe) if maybe else "")
 
 
 def cmd_correct(args) -> int:

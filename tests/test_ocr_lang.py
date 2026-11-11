@@ -63,3 +63,37 @@ def test_ocr_lang_pref_is_validated(monkeypatch, tmp_path):
     monkeypatch.setenv("REA_VIDEO_HOME", str(tmp_path))
     with pytest.raises(ValueError):
         memory.set_pref("ocr_lang", "fr")
+
+
+def test_rapidocr3_is_used_when_rapidocr_onnxruntime_is_missing(monkeypatch, tmp_path):
+    import numpy as np
+
+    made = []
+
+    class Output:
+        boxes = np.array([[[0, 0], [10, 0], [10, 5], [0, 5]]], dtype=np.float32)
+        txts = ("字幕",)
+        scores = (0.9,)
+        elapse = 0.1
+
+    class RapidOCR:
+        def __init__(self, params=None):
+            made.append(params)
+
+        def __call__(self, img):
+            return Output() if img is not None else types.SimpleNamespace(boxes=None, txts=None, scores=None, elapse=0.0)
+
+    monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", None)  # import raises ImportError
+    monkeypatch.setitem(sys.modules, "rapidocr", types.SimpleNamespace(RapidOCR=RapidOCR))
+    monkeypatch.setattr(overlay, "_OCR", {})
+    model = tmp_path / "japan.onnx"
+    model.write_bytes(b"x")
+    monkeypatch.setenv("REA_OCR_REC_MODEL", str(model))
+    monkeypatch.setenv("REA_OCR_LANG", "ja")
+    ocr = overlay.get_ocr()
+    assert made[0]["Rec.model_path"] == str(model)
+    res, _ = ocr(np.zeros((5, 10, 3), np.uint8))
+    assert res == [[[[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]], "字幕", 0.9]]
+    assert ocr(None)[0] is None  # nothing found: same as rapidocr-onnxruntime
+    for box, text, conf in res:  # the shape overlay / packaging iterate over
+        assert len(box) == 4 and text == "字幕" and conf == 0.9
