@@ -277,7 +277,7 @@ A young woman in a cream sweater picks up an apple-shaped ceramic mug from a woo
 | 41.53s | ding | テキストラベル「思，U秒时长，抬配轻采的育」が出現 | 字幕「Seedance 2.0」が出現 | deterministic_anchored |
 | 44.56s | pop |  | 字幕「子的质感、颜值，以及日常使用的幸」が出現 | deterministic |
 | 47.14s | ding | テキストラベル「提交成功，消耗1个额度」が出現 | 字幕「的梦境」が出現 | deterministic_anchored |
-| 47.54s | pop | テキストラベル「知遇」が出現 | 字幕「66|会员加速」が出現 | deterministic_anchored |
+| 47.54s | pop | テキストラベル「知遇」が出現 | 字幕「66\|会员加速」が出現 | deterministic_anchored |
 | 50.41s | pop | テキストラベル「Aod tssca」が出現 | テキストラベル「Aod tssca」が出現 | deterministic_anchored |
 | 51.41s | ding | テキストラベル「福」が出現 | テキストラベル「福」が出現 | deterministic_anchored |
 | 53.52s | ding | 装飾文字「gan,and」が出現 | 装飾文字「gan,and」が出現 | deterministic_anchored |

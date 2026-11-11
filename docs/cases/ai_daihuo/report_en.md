@@ -277,7 +277,7 @@ Gear:
 | 41.53 s | ding | text label 「思，U秒时长，抬配轻采的育」 appears | caption 「Seedance 2.0」 appears | deterministic_anchored |
 | 44.56 s | pop |  | caption 「子的质感、颜值，以及日常使用的幸」 appears | deterministic |
 | 47.14 s | ding | text label 「提交成功，消耗1个额度」 appears | caption 「的梦境」 appears | deterministic_anchored |
-| 47.54 s | pop | text label 「知遇」 appears | caption 「66|会员加速」 appears | deterministic_anchored |
+| 47.54 s | pop | text label 「知遇」 appears | caption 「66\|会员加速」 appears | deterministic_anchored |
 | 50.41 s | pop | text label 「Aod tssca」 appears | text label 「Aod tssca」 appears | deterministic_anchored |
 | 51.41 s | ding | text label 「福」 appears | text label 「福」 appears | deterministic_anchored |
 | 53.52 s | ding | styled text 「gan,and」 appears | styled text 「gan,and」 appears | deterministic_anchored |

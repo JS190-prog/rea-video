@@ -275,7 +275,7 @@ A young woman in a cream sweater picks up an apple-shaped ceramic mug from a woo
 | 41.53s | ding | 文字标注「思，U秒时长，抬配轻采的育」出现 | 字幕「Seedance 2.0」出现 | deterministic_anchored |
 | 44.56s | pop |  | 字幕「子的质感、颜值，以及日常使用的幸」出现 | deterministic |
 | 47.14s | ding | 文字标注「提交成功，消耗1个额度」出现 | 字幕「的梦境」出现 | deterministic_anchored |
-| 47.54s | pop | 文字标注「知遇」出现 | 字幕「66|会员加速」出现 | deterministic_anchored |
+| 47.54s | pop | 文字标注「知遇」出现 | 字幕「66\|会员加速」出现 | deterministic_anchored |
 | 50.41s | pop | 文字标注「Aod tssca」出现 | 文字标注「Aod tssca」出现 | deterministic_anchored |
 | 51.41s | ding | 文字标注「福」出现 | 文字标注「福」出现 | deterministic_anchored |
 | 53.52s | ding | 花字「gan,and」出现 | 花字「gan,and」出现 | deterministic_anchored |
