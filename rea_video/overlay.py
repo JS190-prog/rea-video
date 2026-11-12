@@ -15,7 +15,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .util import LOG, OCR_LANGS, fetch
+from .util import LOG, OCR_LANGS, fetch, ort_providers
 
 # Recognition models for languages other than the bundled Chinese/English one. Detection stays the bundled
 # model, which finds Japanese text lines fine; only the recognizer's character set has to change. The ONNX
@@ -79,7 +79,8 @@ class _RapidOCR3:
     def __init__(self, rec_model_path: str | None = None):
         from rapidocr import RapidOCR  # type: ignore
 
-        params = {"Global.log_level": "warning"}
+        params = {"Global.log_level": "warning",
+                  "EngineConfig.onnxruntime.use_cuda": ort_providers()[0] == "CUDAExecutionProvider"}
         if rec_model_path:  # its character list is read from the ONNX metadata, as with rapidocr-onnxruntime
             params["Rec.model_path"] = rec_model_path
         self._ocr = RapidOCR(params=params)

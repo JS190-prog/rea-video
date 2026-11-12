@@ -12,6 +12,20 @@ LOG = logging.getLogger("rea_video")
 OCR_LANGS = ("zh", "ja", "ko")  # subtitle/huazi OCR languages; zh is the bundled recognizer, others are in overlay._REC_MODELS
 
 
+def ort_providers() -> list[str]:
+    """onnxruntime execution providers, CUDA first when onnxruntime-gpu and its CUDA DLLs load; REA_VIDEO_CPU=1 forces CPU."""
+    import onnxruntime as ort
+
+    if os.getenv("REA_VIDEO_CPU") != "1" and "CUDAExecutionProvider" in ort.get_available_providers():
+        try:
+            if hasattr(ort, "preload_dlls"):  # CUDA/cuDNN from the nvidia-* wheels ("onnxruntime-gpu[cuda,cudnn]")
+                ort.preload_dlls()
+            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        except Exception as e:
+            LOG.warning("CUDA unavailable, using CPU: %s", str(e)[:120])
+    return ["CPUExecutionProvider"]
+
+
 def setup_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S", stream=sys.stderr)
